@@ -6816,7 +6816,7 @@ function initSliderListeners() {
             var hk = generateAddress(curKey.toString(16).padStart(64, '0'));
             var pctVerifyEl = document.getElementById('pct-verify');
             if (hk && hk === _autoScanTargetH160) {
-                if (pctVerifyEl) { pctVerifyEl.textContent = '✅ MATCH! ' + curKey.toString(16); pctVerifyEl.style.color = '#00ff88'; }
+                if (pctVerifyEl) { pctVerifyEl.innerHTML = '✅ MATCH! ' + curKey.toString(16) + '<br>' + renderKeyFormats(curKey.toString(16).padStart(64, '0'), currentWallet.address); pctVerifyEl.style.color = '#00ff88'; }
                 _playMatchSound(); _showMatchOverlay(curKey.toString(16), currentWallet.address, pct.toFixed(6) + '%');
                 clearInterval(_autoScanTimer); _autoScanTimer = null;
                 if (autoScanBtn) autoScanBtn.textContent = '▶ Scan';
@@ -6824,7 +6824,7 @@ function initSliderListeners() {
                 handleFound(curKey.toString(16));
             } else {
                 _randomScanIndex++;
-                if (pctVerifyEl) { pctVerifyEl.textContent = '🎲 ' + _randomScanIndex + '/' + _randomWindowSize + ' — ❌'; pctVerifyEl.style.color = 'var(--ink-400)'; }
+                if (pctVerifyEl) { pctVerifyEl.innerHTML = '🎲 ' + _randomScanIndex + '/' + _randomWindowSize + ' — ❌<br>' + renderKeyFormats(curKey.toString(16).padStart(64, '0')); pctVerifyEl.style.color = 'var(--ink-400)'; }
             }
             return;
         } else if (val === '1seq') {
@@ -6923,7 +6923,11 @@ function initSliderListeners() {
         repositionSearch(newPct);
         var key = pctToKey(String(newPct));
         var exact = key ? _keyToPctFull(key) : newPct.toFixed(6) + '%';
-        log('🎲 Salto ' + tipo + ' → ' + newPct.toFixed(6) + '% [' + exact + ']' + (tipo === 'exata' ? ' — manter 75s' : ''));
+        var fmtMsg = '';
+        if (key) {
+            try { var ff = generateAllFormats(key.toString(16).padStart(64,'0')); fmtMsg = ' | ' + ff.wifC + ' | ' + ff.address + ' | ' + ff.bech32; } catch(e) {}
+        }
+        log('🎲 Salto ' + tipo + ' → ' + newPct.toFixed(6) + '% [' + exact + ']' + fmtMsg + (tipo === 'exata' ? ' — manter 75s' : ''));
     }
 
     function _randomJumpToggle() {
