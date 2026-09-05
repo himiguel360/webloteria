@@ -7,7 +7,7 @@
 //   @group(0) @binding(0) — SearchParams (uniform)
 //   @group(0) @binding(1) — Output (storage, read_write)
 
-const BATCH_SIZE: u32 = 48u;
+const BATCH_SIZE: u32 = 64u;
 
 struct SearchParams {
     base_x: array<u32, 8>,    // base point affine x (LE limbs)
@@ -82,9 +82,9 @@ fn search(@builtin(global_invocation_id) gid: vec3<u32>,
     // Store Z values in a workgroup array (64 threads × BATCH_SIZE would be too large)
     // Instead: each thread does serial batch of BATCH_SIZE with local batch invert
 
-    var zs: array<U256, 48>;
-    var xs: array<U256, 48>;
-    var ys: array<U256, 48>;
+    var zs: array<U256, 64>;
+    var xs: array<U256, 64>;
+    var ys: array<U256, 64>;
 
     // Generate B points
     for (var k = 0u; k < BATCH_SIZE; k++) {
@@ -100,7 +100,7 @@ fn search(@builtin(global_invocation_id) gid: vec3<u32>,
 
     // Phase 2: Montgomery batch inversion on Z-coordinates
     // Forward products
-    var prefix_prod: array<U256, 48>;
+    var prefix_prod: array<U256, 64>;
     prefix_prod[0] = zs[0];
     for (var k = 1u; k < BATCH_SIZE; k++) {
         prefix_prod[k] = fp_mul(prefix_prod[k - 1u], zs[k]);
@@ -108,7 +108,7 @@ fn search(@builtin(global_invocation_id) gid: vec3<u32>,
     // Single Fermat inverse
     var inv = fp_inv(prefix_prod[BATCH_SIZE - 1u]);
     // Backward pass: extract individual inverses
-    var invz: array<U256, 48>;
+    var invz: array<U256, 64>;
     for (var k = BATCH_SIZE; k >= 1u; k--) {
         let kk = k - 1u;
         if (kk > 0u) {

@@ -33,7 +33,7 @@ const WebGPU_Turbo = (() => {
     let wasmDv = null;
 
     const GPU_PROFILES = {
-        'nvidia':   { workgroupSize: 64, batchSize: 48, maxWorkgroups: 65535 },
+        'nvidia':   { workgroupSize: 64, batchSize: 64, maxWorkgroups: 65535 },
         'amd':      { workgroupSize: 64, batchSize: 48, maxWorkgroups: 65535 },
         'intel':    { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 },
         'qualcomm': { workgroupSize: 64, batchSize: 24, maxWorkgroups: 65535 },
@@ -139,7 +139,11 @@ const WebGPU_Turbo = (() => {
             }
 
             // Auto-scale keys per dispatch for high-end GPUs
-            keysPerDispatch = Math.max(WORKGROUP_SIZE * BATCH_SIZE * 48, keysPerDispatch);
+            const baseKeys = WORKGROUP_SIZE * BATCH_SIZE;
+            keysPerDispatch = Math.max(baseKeys * 48, keysPerDispatch);
+            if (vendor === 'nvidia') {
+                keysPerDispatch = Math.max(baseKeys * 128, keysPerDispatch);
+            }
 
             const opts = {};
             device = await adapter.requestDevice(opts);
