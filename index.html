@@ -4421,14 +4421,12 @@ function precomputeBase(keyBigInt) { if (!wasmInst) return null; var dv = wasmDv
 function precomputeBaseXY(keyBigInt) { if (!wasmInst) return null; var dv = wasmDv, K = 0x50000, PX = 0x50020, PY = 0x50040, PZ = 0x50060, AX = 0x50080, AY = 0x500A0; var k = typeof keyBigInt === 'string' ? BigInt('0x' + keyBigInt) : keyBigInt; for (var i = 0; i < 8; i++) { dv.setUint32(K + i * 4, Number(k & 0xffffffffn), true); k >>= 32n; } wasmInst.exports.scalarMul(K, PX, PY, PZ); var parity = wasmInst.exports.to_affine(PX, PY, PZ, AX, AY); var x = [], y = []; for (var i = 0; i < 8; i++) { x.push(dv.getUint32(AX + i * 4, true)); y.push(dv.getUint32(AY + i * 4, true)); } return { x: x, y: y, parity: parity }; }
 
 async function initGPU(sharedModule) {
-    console.log('[WebGPU] navigator.gpu:', typeof navigator.gpu, '| crossOriginIsolated:', window.crossOriginIsolated);
-    if (!navigator.gpu) { console.warn('[WebGPU] navigator.gpu is', typeof navigator.gpu); return false; }
+    if (!navigator.gpu) return false;
     try {
-        console.log('[WebGPU] requestAdapter(high-performance)...');
         adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-        if (!adapter) { console.log('[WebGPU] requestAdapter(low-power)...'); adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' }); }
-        if (!adapter) { console.log('[WebGPU] requestAdapter(default)...'); adapter = await navigator.gpu.requestAdapter(); }
-        if (!adapter) { console.warn('[WebGPU] All requestAdapter() returned null'); return false; }
+        if (!adapter) adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+        if (!adapter) adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) return false;
         adapterInfo = {};
         try { if (typeof adapter.requestAdapterInfo === 'function') { adapterInfo = await adapter.requestAdapterInfo(); } else if (adapter.info) { adapterInfo = adapter.info; } } catch (e) {}
         var vendor = detectGPUVendor(adapterInfo);
