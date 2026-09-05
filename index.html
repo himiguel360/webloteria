@@ -4109,10 +4109,14 @@ hr {
                 <div class="wl-select">
                   <select class="input wl-select__control" id="worker-count">
                     <option value="auto" selected>Automático</option>
-                    <option value="1">1 &mdash; mínimo</option>
+                    <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="4">4</option>
-                    <option value="8">8 &mdash; máximo</option>
+                    <option value="8">8</option>
+                    <option value="16">16</option>
+                    <option value="32">32</option>
+                    <option value="64">64</option>
+                    <option value="0">Ilimitado</option>
                   </select>
                   <svg class="icon icon--sm wl-select__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M6 9.5l6 6 6-6"/></svg>
                 </div>
@@ -5759,16 +5763,16 @@ function repositionSearch(newPct) {
         return;
     }
 
-    var exactPct = newPct.toFixed(6);
+    var exactPct = fmtPctGlobal(String(newPct));
 
     if (newKey > _lastRepositionKey) {
         currentBlockTracker.markDone(_lastRepositionKey, newKey);
-        logOk('▶ Busca reposicionada para ' + exactPct + '% — [' + newKey.toString(16) + '..' + rangeEnd.toString(16) + ']');
+        logOk('▶ Busca reposicionada para ' + exactPct + ' — [' + newKey.toString(16) + '..' + rangeEnd.toString(16) + ']');
         log('Workers continuarão buscando a partir da nova posição.');
     } else {
         currentBlockTracker.trimFrom(newKey);
-        logWarn('◀ Busca revertida para ' + exactPct + '% — [' + newKey.toString(16) + '..' + rangeEnd.toString(16) + ']');
-        log('Regiões acima de ' + exactPct + '% serão re-exploradas.');
+        logWarn('◀ Busca revertida para ' + exactPct + ' — [' + newKey.toString(16) + '..' + rangeEnd.toString(16) + ']');
+        log('Regiões acima de ' + exactPct + ' serão re-exploradas.');
     }
 
     _lastRepositionKey = newKey;
@@ -5782,6 +5786,26 @@ function repositionSearch(newPct) {
     var newStart = newKey.toString(16);
     var newEnd = rangeEnd.toString(16);
     var targetH160 = addressToHash160(currentWallet.address);
+
+    if (gpuSearchActive && gpuAvailable && typeof WebGPU_Turbo !== 'undefined') {
+        WebGPU_Turbo.stop();
+        gpuSearchActive = false;
+        setTimeout(function() {
+            if (!running) return;
+            gpuSearchActive = true;
+            WebGPU_Turbo.searchLoop(
+                targetH160, newKey, rangeEnd,
+                function(p) { if (!running) return; totalKeys += BigInt(p.count); },
+                function(kh) { if (running) handleFound(kh); }
+            ).then(function(r) {
+                gpuSearchActive = false;
+                if (running) log('GPU reposicionada concluída: ' + r.totalChecked.toLocaleString() + ' chaves.');
+            }).catch(function(e) {
+                gpuSearchActive = false;
+                logErr('GPU reposicionada erro: ' + e.message);
+            });
+        }, 100);
+    }
 
     workers.forEach(function(w, i) {
         var blockKeyCount = rangeEnd - newKey + 1n;
@@ -6060,6 +6084,9 @@ function currentWorkerCount() {
     const v = document.getElementById('worker-count').value;
     if (v === 'auto') {
         return navigator.hardwareConcurrency || 4;
+    }
+    if (v === '0') {
+        return navigator.hardwareConcurrency || 16;
     }
     return parseInt(v, 10) || 1;
 }
@@ -6833,8 +6860,14 @@ function initSliderListeners() {
     function fmtPct(pctStr) {
         var v = parseFloat(pctStr);
         if (isNaN(v)) return '0%';
-        if (v < 0.0001 && v > 0) return v.toExponential(4) + '%';
-        return v.toFixed(6) + '%';
+        if (v === 0) return '0%';
+        if (v < 0.0001) return v.toExponential(4) + '%';
+        if (Math.abs(v - Math.round(v)) < 1e-9) return Math.round(v) + '%';
+        var s = v.toString();
+        var dec = s.indexOf('.');
+        if (dec < 0) return s + '%';
+        var trimmed = s.replace(/0+$/, '').replace(/\.$/, '');
+        return trimmed + '%';
     }
 
     function updateSliderFast() {
@@ -7003,7 +7036,7 @@ function initSliderListeners() {
             var pctVerifyEl = document.getElementById('pct-verify');
             if (hk && hk === _autoScanTargetH160) {
                 if (pctVerifyEl) { pctVerifyEl.innerHTML = '✅ MATCH! ' + curKey.toString(16) + '<br>' + renderKeyFormats(curKey.toString(16).padStart(64, '0'), currentWallet.address); pctVerifyEl.style.color = '#00ff88'; }
-                _playMatchSound(); _showMatchOverlay(curKey.toString(16), currentWallet.address, pct.toFixed(6) + '%');
+                _playMatchSound(); _showMatchOverlay(curKey.toString(16), currentWallet.address, fmtPctGlobal(String(pct)));
                 clearInterval(_autoScanTimer); _autoScanTimer = null;
                 if (autoScanBtn) autoScanBtn.textContent = '▶ Scan';
                 running = true;
@@ -7108,12 +7141,12 @@ function initSliderListeners() {
         }
         repositionSearch(newPct);
         var key = pctToKey(String(newPct));
-        var exact = key ? _keyToPctFull(key) : newPct.toFixed(6) + '%';
+        var exact = key ? _keyToPctFull(key) : fmtPct(String(newPct));
         var fmtMsg = '';
         if (key) {
             try { var ff = generateAllFormats(key.toString(16).padStart(64,'0')); fmtMsg = ' | ' + ff.wifC + ' | ' + ff.address + ' | ' + ff.bech32; } catch(e) {}
         }
-        log('🎲 Salto ' + tipo + ' → ' + newPct.toFixed(6) + '% [' + exact + ']' + fmtMsg + (tipo === 'exata' ? ' — manter 75s' : ''));
+        log('🎲 Salto ' + tipo + ' → ' + fmtPct(String(newPct)) + ' [' + exact + ']' + fmtMsg + (tipo === 'exata' ? ' — manter 75s' : ''));
     }
 
     function _randomJumpToggle() {
@@ -7438,14 +7471,15 @@ function _onNibbleClick(idx) {
 function fmtPctGlobal(pctStr) {
     var v = parseFloat(pctStr);
     if (isNaN(v)) return '0%';
-    if (v < 0.0001 && v > 0) return v.toExponential(4) + '%';
+    if (v === 0) return '0%';
+    if (v < 0.0001) return v.toExponential(4) + '%';
     var s = String(pctStr);
     var dot = s.indexOf('.');
     if (dot >= 0) {
         var trimmed = s.replace(/0+$/, '').replace(/\.$/, '');
         return trimmed + '%';
     }
-    return v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%';
+    return v + '%';
 }
 
 function _initLupa() {
