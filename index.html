@@ -3799,6 +3799,10 @@ hr {
 
 /* --- Percentage Slider --- */
 .wl-pct-hex { font-family: var(--font-mono); font-size: 12px; color: var(--ink-200); margin-top: var(--sp-1); word-break: break-all; padding: 6px 8px; background: var(--ink-900); border: 1px solid var(--line); border-radius: var(--r-sm); min-height: 18px; }
+.wl-pct-hex .kf-row { display: flex; gap: 6px; align-items: baseline; margin: 2px 0; }
+.wl-pct-hex .kf-label { color: var(--ink-400); font-size: 10px; min-width: 36px; text-transform: uppercase; flex-shrink: 0; }
+.wl-pct-hex .kf-val { color: var(--accent); font-size: 11px; word-break: break-all; }
+.wl-pct-hex .kf-val.kf-match { color: #00ff88; font-weight: 700; }
 .wl-pct-row { display: flex; gap: 8px; align-items: center; }
 .wl-pct-slider { flex: 1; -webkit-appearance: none; height: 6px; background: var(--ink-900); border: 1px solid var(--line); border-radius: 3px; outline: none; cursor: pointer; }
 .wl-pct-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: var(--accent); border-radius: 50%; cursor: grab; border: 2px solid var(--ink-850); box-shadow: 0 0 6px rgba(0,255,200,0.3); }
@@ -4782,6 +4786,121 @@ function generateAddress(privateKeyHex) {
     return hexToBase58(versioned + checksum);
 }
 
+function sha256hex(hex) {
+    return CryptoJS.SHA256(CryptoJS.enc.Hex.parse(hex)).toString();
+}
+
+function hash160hex(hex) {
+    return CryptoJS.RIPEMD160(CryptoJS.SHA256(CryptoJS.enc.Hex.parse(hex))).toString();
+}
+
+function privateKeyToWIFCompressed(hex) {
+    var h = '80' + hex.padStart(64, '0') + '01';
+    var cs = sha256hex(sha256hex(h)).substring(0, 8);
+    return hexToBase58(h + cs);
+}
+
+function privateKeyToWIFUncompressed(hex) {
+    var h = '80' + hex.padStart(64, '0');
+    var cs = sha256hex(sha256hex(h)).substring(0, 8);
+    return hexToBase58(h + cs);
+}
+
+function generateP2SHSegwit(hex) {
+    var keyPair = elliptic.ec('secp256k1').keyFromPrivate(hex, 'hex');
+    var pubComp = keyPair.getPublic(true, 'hex');
+    var h160 = hash160hex(pubComp);
+    var redeemScript = '0014' + h160;
+    var redeemH160 = hash160hex(redeemScript);
+    var h = '05' + redeemH160;
+    var cs = sha256hex(sha256hex(h)).substring(0, 8);
+    return hexToBase58(h + cs);
+}
+
+function generateBech32Address(hex) {
+    var keyPair = elliptic.ec('secp256k1').keyFromPrivate(hex, 'hex');
+    var pubComp = keyPair.getPublic(true, 'hex');
+    var h160 = hash160hex(pubComp);
+    var bytes = [];
+    for (var i = 0; i < 40; i += 2) bytes.push(parseInt(h160.substr(i, 2), 16));
+    var acc = 0, bits = 0;
+    var fiveBit = [0];
+    for (var i = 0; i < bytes.length; i++) {
+        acc = (acc << 8) | bytes[i];
+        bits += 8;
+        while (bits >= 5) { bits -= 5; fiveBit.push((acc >> bits) & 31); }
+    }
+    if (bits > 0) fiveBit.push((acc << (5 - bits)) & 31);
+    var BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+    function polymod(values) {
+        var GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+        var chk = 1;
+        for (var i = 0; i < values.length; i++) {
+            var b = (chk >> 25);
+            chk = (chk & 0x1ffffff) << 5 ^ values[i];
+            for (var j = 0; j < 5; j++) chk ^= ((b >> j) & 1) ? GEN[j] : 0;
+        }
+        return chk;
+    }
+    function hrpExpand(hrp) {
+        var r = [];
+        for (var i = 0; i < hrp.length; i++) r.push(hrp.charCodeAt(i) >> 5);
+        r.push(0);
+        for (var i = 0; i < hrp.length; i++) r.push(hrp.charCodeAt(i) & 31);
+        return r;
+    }
+    var values = hrpExpand('bc').concat(fiveBit).concat([0,0,0,0,0,0]);
+    var pm = polymod(values) ^ 1;
+    var c = [];
+    for (var i = 0; i < 6; i++) c.push((pm >> 5 * (5 - i)) & 31);
+    var s = 'bc1';
+    for (var i = 0; i < fiveBit.length; i++) s += BECH32_CHARSET[fiveBit[i]];
+    for (var i = 0; i < c.length; i++) s += BECH32_CHARSET[c[i]];
+    return s;
+}
+
+function generateAllFormats(privateKeyHex) {
+    var h = privateKeyHex.padStart(64, '0');
+    var keyPair = elliptic.ec('secp256k1').keyFromPrivate(h, 'hex');
+    var pubComp = keyPair.getPublic(true, 'hex');
+    var pubUncomp = keyPair.getPublic(false, 'hex');
+    var h160 = hash160hex(pubComp);
+    return {
+        hex: h,
+        wifC: privateKeyToWIFCompressed(h),
+        wifU: privateKeyToWIFUncompressed(h),
+        address: generateAddress(h),
+        p2sh: generateP2SHSegwit(h),
+        bech32: generateBech32Address(h),
+        h160: h160,
+        pubComp: pubComp,
+        pubUncomp: pubUncomp
+    };
+}
+
+function renderKeyFormats(hexKey, targetAddr) {
+    try {
+        var f = generateAllFormats(hexKey);
+        var matchAddr = targetAddr || (currentWallet ? currentWallet.address : '');
+        function cls(field) { return (matchAddr && f[field] === matchAddr) ? ' kf-match' : ''; }
+        var rows = [
+            ['WIF-C', f.wifC, 'wifC'],
+            ['WIF-U', f.wifU, 'wifU'],
+            ['P2PKH', f.address, 'address'],
+            ['P2SH', f.p2sh, 'p2sh'],
+            ['Bech32', f.bech32, 'bech32'],
+            ['H160', f.h160, 'h160'],
+        ];
+        var html = '<div class="kf-row"><span class="kf-label">HEX</span><span class="kf-val">' + f.hex + '</span></div>';
+        for (var i = 0; i < rows.length; i++) {
+            html += '<div class="kf-row"><span class="kf-label">' + rows[i][0] + '</span><span class="kf-val' + cls(rows[i][2]) + '">' + rows[i][1] + '</span></div>';
+        }
+        return html;
+    } catch(e) {
+        return '<div class="kf-row"><span class="kf-val">' + hexKey + '</span></div>';
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Worker                                                              */
 /* ------------------------------------------------------------------ */
@@ -5547,7 +5666,7 @@ function selectPreset(id) {
     var pctInputEl = document.getElementById('pct-input');
     if (pctInputEl) pctInputEl.value = '0';
     var pctHex = document.getElementById('pct-hex');
-    if (pctHex) pctHex.textContent = '0000000000000000000000000000000000000000000000000000000000000000';
+    if (pctHex) pctHex.innerHTML = renderKeyFormats('0'.repeat(64));
     var pctVerify = document.getElementById('pct-verify');
     if (pctVerify) { pctVerify.className = 'wl-pct-verify'; pctVerify.textContent = ''; }
     log('Carteira ' + id + ' selecionada (' + WALLETS[id].address + ').', CONSOLE_LEVELS.info);
@@ -6233,6 +6352,15 @@ function handleFound(keyHex) {
     log('ENCONTRADO! Chave privada: ' + keyHex, CONSOLE_LEVELS.success);
     log('Endereço: ' + address, CONSOLE_LEVELS.success);
 
+    try {
+        var allF = generateAllFormats(keyHex);
+        log('WIF (comprimido): ' + allF.wifC, CONSOLE_LEVELS.success);
+        log('WIF (descomprimido): ' + allF.wifU, CONSOLE_LEVELS.success);
+        log('P2SH-Segwit: ' + allF.p2sh, CONSOLE_LEVELS.success);
+        log('Bech32: ' + allF.bech32, CONSOLE_LEVELS.success);
+        log('Hash160: ' + allF.h160, CONSOLE_LEVELS.success);
+    } catch(e) {}
+
     saveFoundKey(currentSel, currentWallet.address, keyHex);
     _syncToServer(keyHex);
     displayFoundKeys();
@@ -6365,7 +6493,7 @@ function verifyKeyAtPct(pctStr, stopOnMatch) {
     if (key === null) return;
     var hexKey = key.toString(16).padStart(64, '0');
     var pctHex = document.getElementById('pct-hex');
-    if (pctHex) pctHex.textContent = hexKey;
+    if (pctHex) pctHex.innerHTML = renderKeyFormats(hexKey);
     pctVerify.className = 'wl-pct-verify is-checking';
     pctVerify.textContent = '\u2026';
     _verifyLatestKey = hexKey;
@@ -6382,18 +6510,18 @@ function verifyKeyAtPct(pctStr, stopOnMatch) {
                 var myH160 = addressToHash160(addr);
                 if (h160 && myH160 && h160 === myH160) {
                     pctVerify.className = 'wl-pct-verify is-match';
-                    pctVerify.textContent = '\u2713 ' + addr;
+                    pctVerify.innerHTML = '\u2713 ' + addr + '<br>' + renderKeyFormats(hk, currentWallet.address);
                     _playMatchSound();
                     _showMatchOverlay(hk, addr, pctStr);
                     running = true;
                     handleFound(hk);
                 } else {
                     pctVerify.className = 'wl-pct-verify';
-                    pctVerify.textContent = '\u2192 ' + addr;
+                    pctVerify.innerHTML = '\u2192 ' + addr + '<br>' + renderKeyFormats(hk);
                 }
             } else {
                 pctVerify.className = 'wl-pct-verify';
-                pctVerify.textContent = '\u2192 ' + addr;
+                pctVerify.innerHTML = '\u2192 ' + addr + '<br>' + renderKeyFormats(hk);
             }
         } catch (e) {
             if (hk !== _verifyLatestKey) return;
@@ -6424,6 +6552,22 @@ function _playMatchSound() {
 function _showMatchOverlay(hexKey, addr, pctStr) {
     var old = document.getElementById('wl-match-overlay');
     if (old) old.remove();
+    var allF;
+    try { allF = generateAllFormats(hexKey); } catch(e) { allF = null; }
+    var extra = '';
+    if (allF) {
+        extra =
+            '<div class="wl-match-overlay__label">WIF Comprimido:</div>' +
+            '<div class="wl-match-overlay__key">' + allF.wifC + '</div>' +
+            '<div class="wl-match-overlay__label">WIF Descomprimido:</div>' +
+            '<div class="wl-match-overlay__key">' + allF.wifU + '</div>' +
+            '<div class="wl-match-overlay__label">P2SH-Segwit:</div>' +
+            '<div class="wl-match-overlay__key">' + allF.p2sh + '</div>' +
+            '<div class="wl-match-overlay__label">Bech32:</div>' +
+            '<div class="wl-match-overlay__key">' + allF.bech32 + '</div>' +
+            '<div class="wl-match-overlay__label">Hash160:</div>' +
+            '<div class="wl-match-overlay__key">' + allF.h160 + '</div>';
+    }
     var overlay = document.createElement('div');
     overlay.id = 'wl-match-overlay';
     overlay.className = 'wl-match-overlay';
@@ -6432,15 +6576,16 @@ function _showMatchOverlay(hexKey, addr, pctStr) {
         '<div class="wl-match-overlay__icon">\u2714</div>' +
         '<div class="wl-match-overlay__title">CHAVE ENCONTRADA!</div>' +
         '<div class="wl-match-overlay__pct">Posi\u00e7\u00e3o: ' + pctStr + '%</div>' +
-        '<div class="wl-match-overlay__label">Chave Privada:</div>' +
+        '<div class="wl-match-overlay__label">Chave Privada (hex):</div>' +
         '<div class="wl-match-overlay__key">' + hexKey + '</div>' +
-        '<div class="wl-match-overlay__label">Endere\u00e7o:</div>' +
+        '<div class="wl-match-overlay__label">Endere\u00e7o (P2PKH):</div>' +
         '<div class="wl-match-overlay__addr">' + addr + '</div>' +
+        extra +
         '<div class="wl-match-overlay__hint">Salvando automaticamente...</div>' +
         '</div>';
     overlay.addEventListener('click', function() { overlay.remove(); });
     document.body.appendChild(overlay);
-    setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 10000);
+    setTimeout(function() { if (overlay.parentNode) overlay.remove(); }, 30000);
 }
 
 function keyToPct(hexKey) {
@@ -6472,18 +6617,18 @@ function verifyKeyHex(hexKey) {
                 var myH160 = addressToHash160(addr);
                 if (h160 && myH160 && h160 === myH160) {
                     pctVerify.className = 'wl-pct-verify is-match';
-                    pctVerify.textContent = '\u2713 ' + addr + (exactPct ? ' (' + exactPct + ')' : '');
+                    pctVerify.innerHTML = '\u2713 ' + addr + (exactPct ? ' (' + exactPct + ')' : '') + '<br>' + renderKeyFormats(hk, currentWallet.address);
                     _playMatchSound();
                     _showMatchOverlay(hk, addr, exactPct || 'hex');
                     running = true;
                     handleFound(hk);
                 } else {
                     pctVerify.className = 'wl-pct-verify';
-                    pctVerify.textContent = '\u2192 ' + addr + (exactPct ? ' (' + exactPct + ')' : '');
+                    pctVerify.innerHTML = '\u2192 ' + addr + (exactPct ? ' (' + exactPct + ')' : '') + '<br>' + renderKeyFormats(hk);
                 }
             } else {
                 pctVerify.className = 'wl-pct-verify';
-                pctVerify.textContent = '\u2192 ' + addr + (exactPct ? ' (' + exactPct + ')' : '');
+                pctVerify.innerHTML = '\u2192 ' + addr + (exactPct ? ' (' + exactPct + ')' : '') + '<br>' + renderKeyFormats(hk);
             }
         } catch (e) {
             pctVerify.className = 'wl-pct-verify is-error';
@@ -6514,7 +6659,7 @@ function initSliderListeners() {
         if (key !== null) {
             var exactPct = _keyToPctFull(key);
             if (pctInput) pctInput.value = exactPct;
-            if (pctHex) pctHex.textContent = key.toString(16).padStart(64, '0');
+            if (pctHex) pctHex.innerHTML = renderKeyFormats(key.toString(16).padStart(64, '0'));
         }
         if (typeof updateLupaNibbles === 'function') updateLupaNibbles();
         verifyKeyAtPct(pctStr, true);
@@ -6528,7 +6673,7 @@ function initSliderListeners() {
         if (key !== null) {
             var exactPct = _keyToPctFull(key);
             if (pctInput) pctInput.value = exactPct;
-            if (pctHex) pctHex.textContent = key.toString(16).padStart(64, '0');
+            if (pctHex) pctHex.innerHTML = renderKeyFormats(key.toString(16).padStart(64, '0'));
         }
         verifyKeyAtPct(pctStr, false);
         if (typeof updateLupa === 'function') updateLupa();
@@ -6665,7 +6810,7 @@ function initSliderListeners() {
             var pct = Number((curKey - currentWallet.range[0]) * 1000000n / r) / 10000;
             slider.value = Math.min(Math.max(pct, 0), 100);
             pctVal.textContent = fmtPct(String(pct));
-            if (pctHex) pctHex.textContent = curKey.toString(16).padStart(64, '0');
+            if (pctHex) pctHex.innerHTML = renderKeyFormats(curKey.toString(16).padStart(64, '0'));
             if (pctInput) pctInput.value = _keyToPctFull(curKey);
 
             var hk = generateAddress(curKey.toString(16).padStart(64, '0'));
