@@ -4,28 +4,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Web Loteria is a client-side Bitcoin address finder that generates random private keys and checks them against target puzzle addresses. It's a single-file HTML application (index.html) with no build system, no package manager, and no external dependencies at build time. Deployed as a static site via GitHub Pages at https://lmajowka.github.io/webloteria/.
+Web Loteria is a client-side Bitcoin puzzle finder that searches private-key ranges against target puzzle addresses. It's a single-file HTML application (`index.html`, ~4,700 lines) with no build system, no package manager, and no external dependencies during normal operation. Deployed as a static site via GitHub Pages at https://lmajowka.github.io/webloteria/. The UI replicates the "Weblotery Turbo" (bitcoinpuzzles.io) look.
 
 ## Development
 
-There is no build step, no linting, and no test suite. The entire application lives in `index.html` (~850 lines including embedded minified libraries). To develop, open the file directly in a browser or serve it with any static file server.
+There is no build step, no linting, and no test suite. The entire application lives in `index.html`. To develop, open the file directly in a browser or serve it with any static file server.
 
 ## Architecture
 
 **Single-file structure** — `index.html` contains everything:
-- Inline CSS (neon cyberpunk theme with CSS variables)
-- Embedded minified libraries: **elliptic.js** (secp256k1 curve) and **CryptoJS** (SHA-256, RIPEMD-160)
+- Inline CSS (Turbo/cyberpunk theme with CSS variables)
+- Embedded minified libraries: **elliptic.js** (secp256k1) and **CryptoJS** (SHA-256, RIPEMD-160) — used by the *main thread* only
+- A self-contained **optimized worker** (`WORKER_SEARCH` template string) with a custom BigInt secp256k1 point-stepper + hand-written SHA-256/RIPEMD-160 — this does NOT load elliptic/CryptoJS in the worker
 - Application JavaScript (unminified, at the bottom)
 
-**Core flow:**
-1. User selects a wallet (puzzle number) from dropdown and clicks "Jogar" (Play)
-2. `start()` → `loop()` initializes wallet config (target address + key range)
-3. `processNextBatch()` generates 1000 random keys per batch via `requestAnimationFrame`
-4. Each key: `generateRandomNumber()` (using `crypto.getRandomValues`) → `generateAddress()` (secp256k1 → SHA-256 → RIPEMD-160 → Base58Check) → compare with target
-5. Match found: `saveFoundKey()` persists to localStorage, `sendPuzzleResult()` POSTs to external API
-6. User clicks "Parar" (Stop) to halt
+**Search model — multi-worker, randomized multi-lane funnel (not partition-exhaustive):**
+1. User picks a wallet (puzzle number) from the preset grid and clicks "Jogar" (Play)
+2. `start()` spawns `N = currentWorkerCount()` (hardware concurrency, capped at 8) workers; each worker gets the **full** wallet range `[rangeStart..rangeEnd]` plus a distinct `workerIndex` and lane options `{lanes:4, windowKeys:262144, batchSize:5000}`
+3. Inside the worker, a `Searcher` runs `lanes` independent frontiers (random multi-lane = tests several keys/regions at once):
+   - Each `Lane` draws a **random** key `k` in the range (`RNG.bigRange`), computes `kG` via `scalarMul()`, then walks a short **sequential** window by `+G`
+   - After the window is exhausted, the lane `reset()`s to a NEW random key (aleatório → sequencial → pula para outra aleatória)
+4. Each worker tick runs a **funnel pipeline** on one lane's batch: `BatchPipeline.run()` → `generate()` (stack `B_` points by `jacaddG`), `invert()` (batch inversion with `modpow_` for a single inversion), `scan()` (affine via `fmul`, build compressed pubkey, `SHA256Core` + `RIPEMD160Core`, then layered match: first 4 bytes, then all 20)
+5. The worker reports `{type:'progress', count}` every `batchSize` keys (aggregated across lanes) and `{type:'found', key}` on a match. Random mode has no natural `done`; it runs until stopped
+6. Page's `onWorkerMessage()` totals up progress into `totalKeys`, and on a find calls `handleFound()` → `generateAddress()` (elliptic+CryptoJS) → `saveFoundKey()` (localStorage) → `sendPuzzleResult()` (POST to external API)
+7. "Parar" (Stop) runs `stopAll()` which `terminate()`s all workers
 
-**Key functions:** `generateRandomNumber(min, max)`, `generateAddress(privateKeyInt)`, `hexToBase58(hex)`, `saveFoundKey()`, `sendPuzzleResult()`, `loop()`, `processNextBatch()`
+**Key functions (page/coordinator):** `start()`, `spawnWorker()`, `getWorkerUrl()`, `onWorkerMessage()`, `handleFound(keyHex)`, `generateAddress(privateKeyHex)`, `hexToBase58(hex)`, `saveFoundKey()`, `sendPuzzleResult()`, `stopAll()`
+
+**Key functions (inside the worker):** `jacaddG()`, `jacdbl()`, `scalarMul()`, `modpow_()`, `fmul()`, `RNG` (seedable PRNG + `bigRange`), `BatchPipeline` (`setTarget/generate/invert/scan/run`) with a per-batch funnel, `SHA256Core`, `RIPEMD160Core`, `Lane` (`reset/setPoint`), `Searcher` (`tick`)
+
+**Throughput:** the optimized worker reaches roughly 170–190k keys/s per thread under load (higher ~450k when idle). Multi-lane increases search coverage/diversity (multiple random frontiers per worker), not raw CPU throughput on a single thread. RIPEMD-160 emits words little-endian — the final byte-swap is required for a correct digest.
+
+**WASM port (integrated):** A wasm-module port of the hot path (secp256k1 point-stepping + SHA-256 + RIPEMD-160). All dev artifacts live in the `docs/` tree at the repo root — see `docs/README.md`. WAT modules are in `docs/wasm-modules/` (`field.wat` validated 2000/2000 + EC 60/60 + end-to-end wallet-65 MATCH; `sha.wat` SHA-256 **300/300** + RIPEMD-160 **300/300** vs node crypto), harnesses in `docs/dev/harness/`, benchmarks in `docs/dev/bench/`. **Note (wabt quirk):** an inline `if (result i32)` chain inside the RIPEMD round loop was miscompiled as dead-code (state zeroed); extracting the round f-functions into a helper `$fsel` fixed it.
+
+  The combined module `docs/wasm-modules/full.wat` (generated by `gen_full.js`, compiles to `full.wasm` = 6863 bytes) adds a **batch pipeline**: `batch_generate(B,sx,sy,sz)` (stores P..P+(B-1)G in `BPTS@0x100000`, 96 B/pt), `batch_invert(B)` (one modp inversion for the whole batch, forward products `BFWD@0x160000` + back-substitute into `BINVZ@0x180000`), `scan(tgt,B)` (affine via inv-Z, build compressed pubkey, SHA-256 + RIPEMD-160, layered 4-byte then 20-byte match; returns index or -1). Memory = 64 pages (4 MB). **Memory-layout note:** the batch region is `0x1A0000+` (`BT0..BT5`, `BPUB@0x1B0000`, `BSHA@0x1B1000`, `BRMD@0x1B2000`, `BTGT@0x1B3000`); do NOT pass EC output pointers in `0x2000+` to `scalarMul`/batch — `SHA_K@0x2000`/`SHA_H@0x3000`/`SHA_W@0x5000` live there and would be clobbered (use `0x1A0B00`-ish scratch). Validated end-to-end (targets at scattered indices 0/1/500/1234/1999/7/1000 found correctly via `scan`; non-target → -1). Bench (B=2048): `generate`~366k/s, `scan`~372k/s, full `g+i+scan` ~162-167k/s per thread — ~2.4x faster than the JS BigInt `BatchPipeline` (~70k/s in Node) and engine-independent.
+
+  The WASM path is **embedded in `WORKER_SEARCH`** (index.html): `var WASM_B64` holds the base64 of `full.wasm` (~9.1 KB); `WasmBatchPipe` instantiates synchronously via `new WebAssembly.Module(bytes)`/`new WebAssembly.Instance(inst)` (no async) in the worker and mirrors the `BatchPipeline` interface (`.B`, `.setTarget`, `.run(cx,cy,cz)→[idx,nx,ny,nz]`). It converts lane (JS BigInt Jacobian) coords → Montgomery limbs (`writeMont` = store plain LE limbs then `to_mont`) → runs the batch → reads back final point (`readPlain` = `to_normal` → read LE limbs). `Searcher` tries `WasmBatchPipe._tryBuild(B)` first, falling back to the JS `BatchPipeline` if WASM is unavailable (B defaults to 2048, within the 4 MB WASM memory).
 
 **State:** All persistence uses browser `localStorage` under the key `foundKeys` (JSON array of `{walletId, address, privateKey, timestamp}`).
 
@@ -34,6 +48,6 @@ There is no build step, no linting, and no test suite. The entire application li
 ## Conventions
 
 - UI text is in **Portuguese** (button labels, log messages, table headers)
-- Wallet addresses and key ranges are hardcoded in the `loop()` function's wallet initialization
-- Console logging uses `log(message)` which appends HTML to `#console` div; supports color classes: `warn`, `error`, and inline `style="color: green"` for success
-- DOM IDs: `wallet-dropdown`, `reduced-token`, `start`, `stop-btn`, `console`, `found-keys-list`
+- Wallet addresses and key ranges are hardcoded in the `WALLETS` object (each entry: `{address, range:[start,end], solved}`)
+- Console logging uses `log(message)` which appends HTML to `#console` div; supports color classes / levels like `warn`, `error`, `success`, `info`
+- DOM IDs include `preset-grid`, `reduced-token`, `start`, `stop-btn`, `console`, `stats-card`

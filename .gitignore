@@ -1,0 +1,12 @@
+node_modules/
+serve.js
+cert.pfx
+*.pfx
+abrir-remoto.bat
+iniciar.bat
+launch-gpu.bat
+launch-gpu-advanced.bat
+test_*.js
+found-keys.json
+.git/
+docs/
