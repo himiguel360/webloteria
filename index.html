@@ -4410,7 +4410,7 @@ var totalChecked = 0n, dispatchCount = 0;
 var bufs = [{}, {}], bufIdx = 0;
 var WORKGROUP_SIZE = 64, BATCH_SIZE_INNER = 48, keysPerDispatch = WORKGROUP_SIZE * BATCH_SIZE_INNER * 48, maxWorkgroups = 65535;
 var wasmInst = null, wasmDv = null;
-var TARGET_DISPATCH_MS = 100, MIN_DISPATCH_MS = 20, MAX_DISPATCH_MS = 300, CALIBRATION_KEY = 'webloteria.gpuWgV5', RESULTS_SIZE = 4 + 32 * 8;
+var TARGET_DISPATCH_MS = 150, MIN_DISPATCH_MS = 30, MAX_DISPATCH_MS = 400, CALIBRATION_KEY = 'webloteria.gpuWgV6', RESULTS_SIZE = 4 + 32 * 8;
 
 var GPU_PROFILES = { 'nvidia': { workgroupSize: 64, batchSize: 64, maxWorkgroups: 65535 }, 'amd': { workgroupSize: 64, batchSize: 48, maxWorkgroups: 65535 }, 'intel': { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 }, 'qualcomm': { workgroupSize: 64, batchSize: 24, maxWorkgroups: 65535 }, 'arm': { workgroupSize: 32, batchSize: 24, maxWorkgroups: 16384 }, 'apple': { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 }, 'powervr': { workgroupSize: 32, batchSize: 16, maxWorkgroups: 8192 }, 'broadcom': { workgroupSize: 16, batchSize: 16, maxWorkgroups: 4096 }, 'default': { workgroupSize: 32, batchSize: 24, maxWorkgroups: 16384 } };
 
@@ -4469,7 +4469,29 @@ function encodeU256(view, offset, bigintValue) { var v = bigintValue; for (var i
 function encodeU256FromArr(view, offset, arr) { for (var i = 0; i < 8; i++) view.setUint32(offset + i * 4, arr[i], true); }
 function encodeParamsToBuffer(buf, baseX, baseY, targetWords, keysPerThread) { var v = new DataView(buf); encodeU256FromArr(v, 0, baseX); encodeU256FromArr(v, 32, baseY); for (var i = 0; i < 5; i++) v.setUint32(64 + i * 4, targetWords[i], true); v.setUint32(84, keysPerThread, true); v.setUint32(88, 0, true); }
 function hash160ToU32Array(hash160Hex) { var w = new Uint32Array(5); for (var i = 0; i < 5; i++) { w[i] = parseInt(hash160Hex.substr(i * 8, 8), 16); } return w; }
-function calibrateGPU(elapsedMs) { var next = keysPerDispatch; if (elapsedMs > MAX_DISPATCH_MS) { next = Math.max(WORKGROUP_SIZE * BATCH_SIZE_INNER, Math.floor(next / 2)); } else if (elapsedMs < MIN_DISPATCH_MS) { next = Math.min(1 << 26, next * 3); } else if (elapsedMs < TARGET_DISPATCH_MS * 0.5) { next = Math.min(1 << 26, Math.floor(next * 1.5)); } else if (elapsedMs < TARGET_DISPATCH_MS * 0.8) { next = Math.min(1 << 26, Math.floor(next * 1.15)); } if (next !== keysPerDispatch) { keysPerDispatch = next; try { localStorage.setItem(CALIBRATION_KEY, String(next)); } catch (e) {} } }
+var _calibHistory = [];
+function calibrateGPU(elapsedMs) {
+    _calibHistory.push(elapsedMs);
+    if (_calibHistory.length > 8) _calibHistory.shift();
+    var avg = 0; for (var i = 0; i < _calibHistory.length; i++) avg += _calibHistory[i];
+    avg /= _calibHistory.length;
+    var next = keysPerDispatch;
+    var min = WORKGROUP_SIZE * BATCH_SIZE_INNER;
+    if (avg > MAX_DISPATCH_MS * 1.2) {
+        next = Math.max(min, Math.floor(next * 0.6));
+    } else if (avg > TARGET_DISPATCH_MS * 1.1) {
+        next = Math.max(min, Math.floor(next * 0.85));
+    } else if (avg < MIN_DISPATCH_MS * 0.8) {
+        next = Math.min(1 << 26, Math.floor(next * 1.2));
+    } else if (avg < TARGET_DISPATCH_MS * 0.6) {
+        next = Math.min(1 << 26, Math.floor(next * 1.1));
+    }
+    if (next !== keysPerDispatch) {
+        keysPerDispatch = next;
+        _calibHistory = [];
+        try { localStorage.setItem(CALIBRATION_KEY, String(next)); } catch (e) {}
+    }
+}
 function restoreCalibration() { try { var s = parseInt(localStorage.getItem(CALIBRATION_KEY)); if (s >= WORKGROUP_SIZE * BATCH_SIZE_INNER && s <= (1 << 26)) keysPerDispatch = s; } catch (e) {} }
 function partition(desired) { var keysPerThread = BATCH_SIZE_INNER; var wg = Math.max(1, Math.ceil(desired / (WORKGROUP_SIZE * keysPerThread))); wg = Math.min(wg, maxWorkgroups); return { workgroups: wg, keysPerThread: keysPerThread }; }
 function submitDispatchGPU(bufSet, baseXArr, baseYArr, targetWords) { var p = partition(keysPerDispatch); var totalKeys = p.workgroups * WORKGROUP_SIZE * p.keysPerThread; var paramBytes = new ArrayBuffer(100); encodeParamsToBuffer(paramBytes, baseXArr, baseYArr, targetWords, p.keysPerThread); device.queue.writeBuffer(bufSet.params, 0, paramBytes); device.queue.writeBuffer(bufSet.output, 0, new ArrayBuffer(RESULTS_SIZE)); var enc = device.createCommandEncoder(); var pass = enc.beginComputePass(); pass.setPipeline(pipeline); pass.setBindGroup(0, bufSet.bindGroup); pass.dispatchWorkgroups(p.workgroups); pass.end(); enc.copyBufferToBuffer(bufSet.output, 0, bufSet.read, 0, RESULTS_SIZE); device.queue.submit([enc.finish()]); return totalKeys; }
@@ -6634,8 +6656,14 @@ function updateStats() {
     if (speedKey !== lastStatsKey) {
         const delta = totalKeys - lastCount;
         const perSec = Number(delta) / ((speedKey - lastStatsKey) || 1);
+        if (!_speedAvg) _speedAvg = [];
+        _speedAvg.push(perSec);
+        if (_speedAvg.length > 5) _speedAvg.shift();
+        var smoothed = 0;
+        for (var si = 0; si < _speedAvg.length; si++) smoothed += _speedAvg[si];
+        smoothed = smoothed / _speedAvg.length;
         var speedEl = document.getElementById('speed');
-        if (speedEl) speedEl.textContent = Math.round(perSec).toLocaleString();
+        if (speedEl) speedEl.textContent = Math.round(smoothed).toLocaleString();
         lastCount = totalKeys;
         lastStatsKey = speedKey;
     }
