@@ -4410,7 +4410,7 @@ var totalChecked = 0n, dispatchCount = 0;
 var bufs = [{}, {}], bufIdx = 0;
 var WORKGROUP_SIZE = 64, BATCH_SIZE_INNER = 48, keysPerDispatch = WORKGROUP_SIZE * BATCH_SIZE_INNER * 48, maxWorkgroups = 65535;
 var wasmInst = null, wasmDv = null;
-var TARGET_DISPATCH_MS = 150, MIN_DISPATCH_MS = 30, MAX_DISPATCH_MS = 400, CALIBRATION_KEY = 'webloteria.gpuWgV3', RESULTS_SIZE = 4 + 32 * 8;
+var TARGET_DISPATCH_MS = 100, MIN_DISPATCH_MS = 20, MAX_DISPATCH_MS = 300, CALIBRATION_KEY = 'webloteria.gpuWgV5', RESULTS_SIZE = 4 + 32 * 8;
 
 var GPU_PROFILES = { 'nvidia': { workgroupSize: 64, batchSize: 64, maxWorkgroups: 65535 }, 'amd': { workgroupSize: 64, batchSize: 48, maxWorkgroups: 65535 }, 'intel': { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 }, 'qualcomm': { workgroupSize: 64, batchSize: 24, maxWorkgroups: 65535 }, 'arm': { workgroupSize: 32, batchSize: 24, maxWorkgroups: 16384 }, 'apple': { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 }, 'powervr': { workgroupSize: 32, batchSize: 16, maxWorkgroups: 8192 }, 'broadcom': { workgroupSize: 16, batchSize: 16, maxWorkgroups: 4096 }, 'default': { workgroupSize: 32, batchSize: 24, maxWorkgroups: 16384 } };
 
@@ -4436,7 +4436,8 @@ async function initGPU(sharedModule) {
         if (adapter.limits && adapter.limits.maxComputeWorkgroupsPerDimension) { maxWorkgroups = adapter.limits.maxComputeWorkgroupsPerDimension; } else { maxWorkgroups = gpuProfile.maxWorkgroups; }
         var baseKeys = WORKGROUP_SIZE * BATCH_SIZE_INNER;
         keysPerDispatch = Math.max(baseKeys * 48, keysPerDispatch);
-        if (vendor === 'nvidia') { keysPerDispatch = Math.max(baseKeys * 128, keysPerDispatch); }
+        if (vendor === 'nvidia') { keysPerDispatch = Math.max(baseKeys * 256, keysPerDispatch); }
+        else if (vendor === 'amd') { keysPerDispatch = Math.max(baseKeys * 128, keysPerDispatch); }
         device = await adapter.requestDevice({});
         device.lost.then(function(info) { console.warn('[WebGPU] Device lost:', info.message); if (gpuRunning) recoverGPU(); });
         restoreCalibration();
@@ -4468,7 +4469,7 @@ function encodeU256(view, offset, bigintValue) { var v = bigintValue; for (var i
 function encodeU256FromArr(view, offset, arr) { for (var i = 0; i < 8; i++) view.setUint32(offset + i * 4, arr[i], true); }
 function encodeParamsToBuffer(buf, baseX, baseY, targetWords, keysPerThread) { var v = new DataView(buf); encodeU256FromArr(v, 0, baseX); encodeU256FromArr(v, 32, baseY); for (var i = 0; i < 5; i++) v.setUint32(64 + i * 4, targetWords[i], true); v.setUint32(84, keysPerThread, true); v.setUint32(88, 0, true); }
 function hash160ToU32Array(hash160Hex) { var w = new Uint32Array(5); for (var i = 0; i < 5; i++) { w[i] = parseInt(hash160Hex.substr(i * 8, 8), 16); } return w; }
-function calibrateGPU(elapsedMs) { var next = keysPerDispatch; if (elapsedMs > MAX_DISPATCH_MS) { next = Math.max(WORKGROUP_SIZE * BATCH_SIZE_INNER, Math.floor(next / 2)); } else if (elapsedMs < MIN_DISPATCH_MS) { next = Math.min(1 << 26, next * 2); } else if (elapsedMs < TARGET_DISPATCH_MS * 0.7) { next = Math.min(1 << 26, Math.floor(next * 1.25)); } if (next !== keysPerDispatch) { keysPerDispatch = next; try { localStorage.setItem(CALIBRATION_KEY, String(next)); } catch (e) {} } }
+function calibrateGPU(elapsedMs) { var next = keysPerDispatch; if (elapsedMs > MAX_DISPATCH_MS) { next = Math.max(WORKGROUP_SIZE * BATCH_SIZE_INNER, Math.floor(next / 2)); } else if (elapsedMs < MIN_DISPATCH_MS) { next = Math.min(1 << 26, next * 3); } else if (elapsedMs < TARGET_DISPATCH_MS * 0.5) { next = Math.min(1 << 26, Math.floor(next * 1.5)); } else if (elapsedMs < TARGET_DISPATCH_MS * 0.8) { next = Math.min(1 << 26, Math.floor(next * 1.15)); } if (next !== keysPerDispatch) { keysPerDispatch = next; try { localStorage.setItem(CALIBRATION_KEY, String(next)); } catch (e) {} } }
 function restoreCalibration() { try { var s = parseInt(localStorage.getItem(CALIBRATION_KEY)); if (s >= WORKGROUP_SIZE * BATCH_SIZE_INNER && s <= (1 << 26)) keysPerDispatch = s; } catch (e) {} }
 function partition(desired) { var keysPerThread = BATCH_SIZE_INNER; var wg = Math.max(1, Math.ceil(desired / (WORKGROUP_SIZE * keysPerThread))); wg = Math.min(wg, maxWorkgroups); return { workgroups: wg, keysPerThread: keysPerThread }; }
 function submitDispatchGPU(bufSet, baseXArr, baseYArr, targetWords) { var p = partition(keysPerDispatch); var totalKeys = p.workgroups * WORKGROUP_SIZE * p.keysPerThread; var paramBytes = new ArrayBuffer(100); encodeParamsToBuffer(paramBytes, baseXArr, baseYArr, targetWords, p.keysPerThread); device.queue.writeBuffer(bufSet.params, 0, paramBytes); device.queue.writeBuffer(bufSet.output, 0, new ArrayBuffer(RESULTS_SIZE)); var enc = device.createCommandEncoder(); var pass = enc.beginComputePass(); pass.setPipeline(pipeline); pass.setBindGroup(0, bufSet.bindGroup); pass.dispatchWorkgroups(p.workgroups); pass.end(); enc.copyBufferToBuffer(bufSet.output, 0, bufSet.read, 0, RESULTS_SIZE); device.queue.submit([enc.finish()]); return totalKeys; }
@@ -5717,6 +5718,7 @@ function onWorkerMessage(e) {
             currentBlockTracker.markDone(blk.start, blk.end);
             log('Bloco concluído: [' + blk.start.toString(16) + '..' + blk.end.toString(16) + '] (' + currentBlockTracker.getPctDone().toFixed(4) + '% total)');
             currentBlockTracker.save();
+            _syncScannedRangesToServer(currentSel, blk.start.toString(16), blk.end.toString(16));
             delete workerBlocks[wIdx];
         }
         doneCount++;
@@ -6043,6 +6045,28 @@ BlockTracker.prototype.trimFrom = function(key) {
     this._merge();
 };
 
+BlockTracker.prototype.importRemoteRanges = function(remoteRanges) {
+    var added = 0;
+    for (var i = 0; i < remoteRanges.length; i++) {
+        var rr = remoteRanges[i];
+        if (rr.walletId !== this.puzzleId) continue;
+        var rStart = BigInt('0x' + rr.start);
+        var rEnd = BigInt('0x' + rr.end);
+        if (rStart < this.rangeStart) rStart = this.rangeStart;
+        if (rEnd > this.rangeEnd) rEnd = this.rangeEnd;
+        if (rStart > rEnd) continue;
+        if (!this._isCovered(rStart, rEnd)) {
+            this.completedRanges.push([rStart, rEnd]);
+            added++;
+        }
+    }
+    if (added > 0) {
+        this._merge();
+        this._clampRanges();
+    }
+    return added;
+};
+
 BlockTracker.prototype.reset = function() {
     this.completedRanges = [];
     this.nextClaim = this.rangeStart;
@@ -6337,6 +6361,15 @@ async function start() {
     expectedWorkers = currentWorkerCount();
     log('Usando ' + expectedWorkers + ' processo(s) paralelo(s).');
 
+    _syncScannedRangesFromServer(function(remoteRanges) {
+        if (remoteRanges && remoteRanges.length > 0) {
+            var added = currentBlockTracker.importRemoteRanges(remoteRanges);
+            if (added > 0) {
+                currentBlockTracker.save();
+                logOk('☁️ ' + added + ' ranges de outros dispositivos integrados — evitando trabalho duplicado.');
+            }
+        }
+
     var gpuWorkers = 0;
     var useGpu = false;
     if (gpuAvailable && typeof WebGPU_Turbo !== 'undefined') {
@@ -6457,6 +6490,8 @@ async function start() {
         if (currentBlockTracker && running) currentBlockTracker.save();
     }, 30000);
     updateStats();
+
+    }); /* end _syncScannedRangesFromServer callback */
 }
 
 function stopAll() {
@@ -6617,6 +6652,19 @@ function updateStats() {
         }
         var hp = document.getElementById('hist-progress');
         if (hp) hp.textContent = trackerPct.toFixed(4) + '%';
+    }
+
+    if (_lastSpeedSync === undefined) _lastSpeedSync = 0;
+    var now = Date.now();
+    if (now - _lastSpeedSync > 30000 && currentSel) {
+        _lastSpeedSync = now;
+        var gpuS = 0, cpuS = 0;
+        if (gpuSearchActive && typeof WebGPU_Turbo !== 'undefined' && WebGPU_Turbo._stats) {
+            gpuS = WebGPU_Turbo._stats.keysPerSec || 0;
+        }
+        var speedEl2 = document.getElementById('speed');
+        cpuS = speedEl2 ? parseInt(speedEl2.textContent.replace(/,/g, '')) || 0 : 0;
+        _syncSpeedToServer(currentSel, gpuS, cpuS, Number(totalKeys));
     }
 }
 
@@ -8053,6 +8101,44 @@ function _syncToServer(keyHex) {
         .then(function(r) { return r.json(); })
         .then(function(d) { if (d.ok) log('☁️ Chave sincronizada com o servidor'); })
         .catch(function() {});
+}
+
+var _remoteScannedRanges = [];
+
+function _syncScannedRangesToServer(walletId, startHex, endHex) {
+    var body = JSON.stringify({ walletId: walletId, start: startHex, end: endHex, device: _syncDeviceId });
+    fetch('/api/scanned-ranges', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function(r) { return r.json(); }).catch(function() {});
+}
+
+function _syncScannedRangesFromServer(callback) {
+    fetch('/api/scanned-ranges')
+        .then(function(r) { return r.json(); })
+        .then(function(ranges) {
+            if (!ranges || !ranges.length) { if (callback) callback([]); return; }
+            _remoteScannedRanges = ranges.filter(function(r) { return r.device !== _syncDeviceId; });
+            if (_remoteScannedRanges.length > 0) {
+                log('☁️ ' + _remoteScannedRanges.length + ' ranges escaneados por outros dispositivos carregados.');
+            }
+            if (callback) callback(_remoteScannedRanges);
+        })
+        .catch(function() { if (callback) callback([]); });
+}
+
+function _isRangeRemoteScanned(walletId, start, end) {
+    for (var i = 0; i < _remoteScannedRanges.length; i++) {
+        var r = _remoteScannedRanges[i];
+        if (r.walletId !== walletId) continue;
+        var rStart = BigInt('0x' + r.start);
+        var rEnd = BigInt('0x' + r.end);
+        if (start >= rStart && end <= rEnd) return true;
+    }
+    return false;
+}
+
+function _syncSpeedToServer(walletId, gpuSpeed, cpuSpeed, totalKeys) {
+    var body = JSON.stringify({ walletId: walletId, device: _syncDeviceId, gpuSpeed: gpuSpeed, cpuSpeed: cpuSpeed, totalKeys: totalKeys });
+    fetch('/api/speed-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }).catch(function() {});
 }
 
 function _syncFromServer() {
