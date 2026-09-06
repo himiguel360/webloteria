@@ -4429,8 +4429,8 @@ function precomputeBaseXY(keyBigInt) { if (!wasmInst) return null; var dv = wasm
 async function initGPU(sharedModule) {
     if (!navigator.gpu) return false;
     try {
-        adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-        if (!adapter) adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+        adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+        if (!adapter) adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         if (!adapter) adapter = await navigator.gpu.requestAdapter();
         if (!adapter) return false;
         adapterInfo = {};
