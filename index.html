@@ -4470,25 +4470,28 @@ function encodeU256FromArr(view, offset, arr) { for (var i = 0; i < 8; i++) view
 function encodeParamsToBuffer(buf, baseX, baseY, targetWords, keysPerThread) { var v = new DataView(buf); encodeU256FromArr(v, 0, baseX); encodeU256FromArr(v, 32, baseY); for (var i = 0; i < 5; i++) v.setUint32(64 + i * 4, targetWords[i], true); v.setUint32(84, keysPerThread, true); v.setUint32(88, 0, true); }
 function hash160ToU32Array(hash160Hex) { var w = new Uint32Array(5); for (var i = 0; i < 5; i++) { w[i] = parseInt(hash160Hex.substr(i * 8, 8), 16); } return w; }
 var _calibHistory = [];
+var _calibLastChange = 0;
 function calibrateGPU(elapsedMs) {
     _calibHistory.push(elapsedMs);
-    if (_calibHistory.length > 8) _calibHistory.shift();
+    if (_calibHistory.length > 12) _calibHistory.shift();
+    if (_calibHistory.length < 4) return;
+    if (performance.now() - _calibLastChange < 500) return;
     var avg = 0; for (var i = 0; i < _calibHistory.length; i++) avg += _calibHistory[i];
     avg /= _calibHistory.length;
     var next = keysPerDispatch;
     var min = WORKGROUP_SIZE * BATCH_SIZE_INNER;
-    if (avg > MAX_DISPATCH_MS * 1.2) {
-        next = Math.max(min, Math.floor(next * 0.6));
-    } else if (avg > TARGET_DISPATCH_MS * 1.1) {
-        next = Math.max(min, Math.floor(next * 0.85));
-    } else if (avg < MIN_DISPATCH_MS * 0.8) {
-        next = Math.min(1 << 26, Math.floor(next * 1.2));
-    } else if (avg < TARGET_DISPATCH_MS * 0.6) {
-        next = Math.min(1 << 26, Math.floor(next * 1.1));
+    if (avg > MAX_DISPATCH_MS) {
+        next = Math.max(min, Math.floor(next * 0.75));
+    } else if (avg > TARGET_DISPATCH_MS) {
+        next = Math.max(min, Math.floor(next * 0.9));
+    } else if (avg < MIN_DISPATCH_MS) {
+        next = Math.min(1 << 26, Math.floor(next * 1.08));
+    } else if (avg < TARGET_DISPATCH_MS * 0.7) {
+        next = Math.min(1 << 26, Math.floor(next * 1.04));
     }
     if (next !== keysPerDispatch) {
         keysPerDispatch = next;
-        _calibHistory = [];
+        _calibLastChange = performance.now();
         try { localStorage.setItem(CALIBRATION_KEY, String(next)); } catch (e) {}
     }
 }
@@ -4517,11 +4520,13 @@ async function searchLoopGPU(targetHash160, startKey, endKey, onProgress, onFoun
         var curBuf = bufs[bufIdx], curKeysCovered = keysCovered, curStartKey = currentKey;
         var t0 = performance.now();
         var totalKeys = await submitOne(currentKey, curBuf);
+        var t1 = performance.now();
         if (totalKeys === 0) { currentKey += keysCovered; continue; }
         dispatchCount++; totalChecked += BigInt(totalKeys); currentKey += keysCovered;
-        if (dispatchCount > 1) { var prevBuf = bufs[1 - bufIdx]; prevHits = await readResultsGPU(prevBuf); var elapsed = performance.now() - t0; calibrateGPU(elapsed);
+        calibrateGPU(t1 - t0);
+        if (dispatchCount > 1) { var prevBuf = bufs[1 - bufIdx]; prevHits = await readResultsGPU(prevBuf);
             for (var hi = 0; hi < prevHits.length; hi++) { var hit = prevHits[hi]; var hitKey = prevStartKey + BigInt(hit.threadId) * BigInt(BATCH_SIZE_INNER) + BigInt(hit.keyOffset); if (hitKey >= startKey && hitKey <= endKey) { var kHex = hitKey.toString(16).padStart(64, '0'); if (onFound) onFound(kHex); } }
-        } else { var el2 = performance.now() - t0; calibrateGPU(el2); }
+        }
         if (onProgress) { onProgress({ count: Number(curKeysCovered), totalChecked: totalChecked, gpuDispatches: dispatchCount, elapsed: performance.now() - t0 }); }
         prevStartKey = curStartKey; bufIdx = 1 - bufIdx;
         var np = partition(keysPerDispatch); keysCovered = BigInt(np.workgroups * WORKGROUP_SIZE * np.keysPerThread);
