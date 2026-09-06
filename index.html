@@ -7266,16 +7266,38 @@ function initSliderListeners() {
         log('🎲 Salto ' + tipo + ' → ' + fmtPct(String(newPct)) + ' [' + exact + ']' + fmtMsg + (tipo === 'exata' ? ' — manter 75s' : ''));
     }
 
+    var _randomJumpInterval = 60000;
+    var _randomJumpSpeeds = [60000, 10000, 3000, 1000];
+    var _randomJumpSpeedIdx = 0;
+    var _randomJumpLabels = ['🎲 Auto-random (60s)', '🎲 Auto-random (10s)', '⚡ Turbo (3s)', '🔥 TURBO (1s)'];
+
+    function _randomJumpRestart() {
+        clearInterval(_randomJumpTimer);
+        _randomJumpTimer = setInterval(_randomJumpTick, _randomJumpInterval);
+    }
+
     function _randomJumpToggle() {
         if (_randomJumpActive) {
-            clearInterval(_randomJumpTimer);
-            _randomJumpTimer = null;
-            _randomJumpActive = false;
-            if (randomJumpBtn) { randomJumpBtn.textContent = '🎲 Auto-random (60s)'; randomJumpBtn.style.background = ''; }
+            _randomJumpSpeedIdx = (_randomJumpSpeedIdx + 1) % (_randomJumpSpeeds.length + 1);
+            if (_randomJumpSpeedIdx >= _randomJumpSpeeds.length) {
+                clearInterval(_randomJumpTimer);
+                _randomJumpTimer = null;
+                _randomJumpActive = false;
+                _randomJumpSpeedIdx = 0;
+                if (randomJumpBtn) { randomJumpBtn.textContent = _randomJumpLabels[0]; randomJumpBtn.style.background = ''; randomJumpBtn.style.color = ''; }
+                log('🎲 Auto-random desativado.');
+                return;
+            }
+            _randomJumpInterval = _randomJumpSpeeds[_randomJumpSpeedIdx];
+            _randomJumpRestart();
+            if (randomJumpBtn) { randomJumpBtn.textContent = _randomJumpLabels[_randomJumpSpeedIdx] + ' ATIVO'; randomJumpBtn.style.background = 'var(--accent)'; randomJumpBtn.style.color = '#000'; }
+            log(_randomJumpSpeedIdx >= 2 ? '🔥 Turbo mode: salto a cada ' + (_randomJumpInterval / 1000) + 's!' : '🎲 Velocidade: ' + (_randomJumpInterval / 1000) + 's');
         } else {
-            _randomJumpTimer = setInterval(_randomJumpTick, 60000);
+            _randomJumpSpeedIdx = 0;
+            _randomJumpInterval = _randomJumpSpeeds[0];
+            _randomJumpTimer = setInterval(_randomJumpTick, _randomJumpInterval);
             _randomJumpActive = true;
-            if (randomJumpBtn) { randomJumpBtn.textContent = '🎲 Auto-random ATIVO (60s)'; randomJumpBtn.style.background = 'var(--accent)'; randomJumpBtn.style.color = '#000'; }
+            if (randomJumpBtn) { randomJumpBtn.textContent = _randomJumpLabels[0] + ' ATIVO'; randomJumpBtn.style.background = 'var(--accent)'; randomJumpBtn.style.color = '#000'; }
             log('🎲 Auto-random ativado — salto a cada 60s');
         }
     }
