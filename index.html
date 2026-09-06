@@ -8188,8 +8188,13 @@ function sendPuzzleResult(walletId, privateKey) {
 
 var _syncDeviceId = 'dev-' + Math.random().toString(36).substring(2, 8);
 var _syncPollTimer = null;
+var _hasApi = (function() {
+    var h = location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || /^\d+\.\d+\.\d+\.\d+$/.test(h);
+})();
 
 function _syncToServer(keyHex) {
+    if (!_hasApi) return;
     var addr = generateAddress(keyHex);
     if (!currentWallet || !addr) return;
     var body = JSON.stringify({
@@ -8208,12 +8213,14 @@ function _syncToServer(keyHex) {
 var _remoteScannedRanges = [];
 
 function _syncScannedRangesToServer(walletId, startHex, endHex) {
+    if (!_hasApi) return;
     var body = JSON.stringify({ walletId: walletId, start: startHex, end: endHex, device: _syncDeviceId });
     fetch('/api/scanned-ranges', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
         .then(function(r) { return r.json(); }).catch(function() {});
 }
 
 function _syncScannedRangesFromServer(callback) {
+    if (!_hasApi) { if (callback) callback([]); return; }
     fetch('/api/scanned-ranges')
         .then(function(r) { return r.json(); })
         .then(function(ranges) {
@@ -8239,11 +8246,13 @@ function _isRangeRemoteScanned(walletId, start, end) {
 }
 
 function _syncSpeedToServer(walletId, gpuSpeed, cpuSpeed, totalKeys) {
+    if (!_hasApi) return;
     var body = JSON.stringify({ walletId: walletId, device: _syncDeviceId, gpuSpeed: gpuSpeed, cpuSpeed: cpuSpeed, totalKeys: totalKeys });
     fetch('/api/speed-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }).catch(function() {});
 }
 
 function _syncFromServer() {
+    if (!_hasApi) return;
     fetch('/api/found-keys')
         .then(function(r) { return r.json(); })
         .then(function(serverKeys) {
