@@ -4052,7 +4052,7 @@ hr {
               </div>
             </div>
             <div style="display:flex; gap:6px; margin-top:6px; align-items:center;">
-              <button class="btn btn--ghost btn--sm" id="random-jump-btn" type="button" title="Saltar para posição aleatória a cada 25s — mistura curta/larga/comprida/exata">🎲 Auto-random (25s)</button>
+              <button class="btn btn--ghost btn--sm" id="random-jump-btn" type="button" title="Saltar para posição aleatória a cada 25s — mistura curta/larga/comprida/exata">🎲 Auto-random (60s)</button>
             </div>
             <div class="wl-progress__legend" id="progress-legend"></div>
           </section>
@@ -6567,7 +6567,7 @@ function stopAll() {
     clearInterval(speedTimer);
     clearInterval(blockSaveTimer);
     if (liveKeysTimer) { clearTimeout(liveKeysTimer); liveKeysTimer = null; }
-    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataBase = null; var rjb = document.getElementById('random-jump-btn'); if (rjb) { rjb.textContent = '🎲 Auto-random (25s)'; rjb.style.background = ''; rjb.style.color = ''; } }
+    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataBase = null; var rjb = document.getElementById('random-jump-btn'); if (rjb) { rjb.textContent = '🎲 Auto-random (60s)'; rjb.style.background = ''; rjb.style.color = ''; } }
     if (_autoScanTimer) { clearInterval(_autoScanTimer); _autoScanTimer = null; var asb = document.getElementById('auto-scan-btn'); if (asb) asb.textContent = '▶ Scan'; }
     _stopSync();
     if (currentBlockTracker) currentBlockTracker.save();
@@ -7266,12 +7266,12 @@ function initSliderListeners() {
             clearInterval(_randomJumpTimer);
             _randomJumpTimer = null;
             _randomJumpActive = false;
-            if (randomJumpBtn) { randomJumpBtn.textContent = '🎲 Auto-random (25s)'; randomJumpBtn.style.background = ''; }
+            if (randomJumpBtn) { randomJumpBtn.textContent = '🎲 Auto-random (60s)'; randomJumpBtn.style.background = ''; }
         } else {
-            _randomJumpTimer = setInterval(_randomJumpTick, 25000);
+            _randomJumpTimer = setInterval(_randomJumpTick, 60000);
             _randomJumpActive = true;
-            if (randomJumpBtn) { randomJumpBtn.textContent = '🎲 Auto-random ATIVO (25s)'; randomJumpBtn.style.background = 'var(--accent)'; randomJumpBtn.style.color = '#000'; }
-            log('🎲 Auto-random ativado — salto a cada 25s');
+            if (randomJumpBtn) { randomJumpBtn.textContent = '🎲 Auto-random ATIVO (60s)'; randomJumpBtn.style.background = 'var(--accent)'; randomJumpBtn.style.color = '#000'; }
+            log('🎲 Auto-random ativado — salto a cada 60s');
         }
     }
 
