@@ -606,6 +606,7 @@ void gpu_thread(WorkCfg cfg) {
 
     uint256_t cur = my_lo;
     uint256_t hi = my_hi;
+    uint32_t zero = 0;
     int blocks = 1024;
     uint64_t threads_per_wave = (uint64_t)blocks * BLOCK_SIZE;
 
