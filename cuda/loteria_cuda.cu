@@ -457,6 +457,83 @@ __device__ bool hash_match(const uint8_t h[20], const TargetHash* t) {
 }
 
 /* ======================================================================
+ * Warp shuffle helpers for uint256_t
+ * ====================================================================== */
+
+__device__ __forceinline__ uint256_t shfl_up(uint256_t v, int delta) {
+    uint256_t r;
+    for (int l = 0; l < 8; l++)
+        r.d[l] = __shfl_up_sync(0xFFFFFFFF, v.d[l], delta);
+    return r;
+}
+
+__device__ __forceinline__ uint256_t shfl_down(uint256_t v, int delta) {
+    uint256_t r;
+    for (int l = 0; l < 8; l++)
+        r.d[l] = __shfl_down_sync(0xFFFFFFFF, v.d[l], delta);
+    return r;
+}
+
+__device__ __forceinline__ uint256_t shfl_bcast(uint256_t v, int src) {
+    uint256_t r;
+    for (int l = 0; l < 8; l++)
+        r.d[l] = __shfl_sync(0xFFFFFFFF, v.d[l], src);
+    return r;
+}
+
+/* Warp-level batch inversion: given 32 Z values (one per lane),
+ * compute all 1/Z using 1 Fermat + ~62 muls instead of 32 Fermats.
+ *
+ * Uses prefix/suffix product approach:
+ *   prefix[i] = z[0]*...*z[i]     (inclusive, left to right)
+ *   suffix[i] = z[i]*...*z[31]    (inclusive, right to left)
+ *   inv_z[i]  = prefix[i-1] * suffix[i+1] * (1/prefix[31])
+ * ====================================================================== */
+
+__device__ __forceinline__ uint256_t warp_batch_inv(uint256_t my_z) {
+    int lane = threadIdx.x & 31;
+
+    /* Inclusive prefix product (left to right) */
+    uint256_t prefix = my_z;
+    for (int d = 0; d < 5; d++) {
+        uint256_t other = shfl_up(prefix, 1 << d);
+        if (lane >= (1 << d))
+            prefix = field_mul(prefix, other);
+    }
+
+    /* Inclusive suffix product (right to left) */
+    uint256_t suffix = my_z;
+    for (int d = 0; d < 5; d++) {
+        uint256_t other = shfl_down(suffix, 1 << d);
+        if (lane < 32 - (1 << d))
+            suffix = field_mul(suffix, other);
+    }
+
+    /* Only lane 31 does the Fermat exponentiation */
+    uint256_t total_inv;
+    if (lane == 31)
+        total_inv = field_inv(prefix);
+    total_inv = shfl_bcast(total_inv, 31);
+
+    /* Back-substitute: inv_z[i] = prefix[i-1] * suffix[i+1] * total_inv */
+    uint256_t prev_prefix;
+    if (lane == 0) {
+        prev_prefix = uint256_t(1);
+    } else {
+        prev_prefix = shfl_up(prefix, 1);
+    }
+
+    uint256_t next_suffix;
+    if (lane == 31) {
+        next_suffix = uint256_t(1);
+    } else {
+        next_suffix = shfl_down(suffix, 1);
+    }
+
+    return field_mul(field_mul(prev_prefix, next_suffix), total_inv);
+}
+
+/* ======================================================================
  * CUDA error check
  * ====================================================================== */
 
@@ -513,15 +590,20 @@ __global__ void search_kernel(
     JacPoint P = scalar_mul_g(key);
     if (P.z.isZero()) return;
 
-    /* Convert to affine */
-    AffPoint A = to_affine(P);
+    /* Warp-level batch inversion of Z coordinates */
+    uint256_t inv_z = warp_batch_inv(P.z);
+
+    /* Convert to affine using batch-inverted Z */
+    uint256_t zi2 = field_sqr(inv_z);
+    uint256_t ax = field_mul(P.x, zi2);
+    uint256_t ay = field_mul(P.y, field_mul(zi2, inv_z));
 
     /* Compressed public key */
-    uint8_t prefix = (A.y.d[0] & 1) ? 0x03 : 0x02;
+    uint8_t prefix = (ay.d[0] & 1) ? 0x03 : 0x02;
 
     /* SHA-256 + RIPEMD-160 */
     uint8_t sha[32], h160[20];
-    sha256_compressed(A.x, prefix, sha);
+    sha256_compressed(ax, prefix, sha);
     ripemd160(sha, 32, h160);
 
     /* Check against target */
