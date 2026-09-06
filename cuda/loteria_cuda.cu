@@ -556,7 +556,7 @@ __device__ __forceinline__ uint256_t warp_batch_inv(uint256_t my_z) {
  *   5. if h == target: FOUND
  * ====================================================================== */
 
-__global__ void __launch_bounds__(256, 2)
+__global__ void __launch_bounds__(128, 4)
 search_kernel(
     uint32_t s0, uint32_t s1, uint32_t s2, uint32_t s3,
     uint32_t s4, uint32_t s5, uint32_t s6, uint32_t s7,
@@ -689,12 +689,13 @@ void gpu_thread(WorkCfg cfg) {
     uint256_t hi = my_hi;
     uint32_t zero = 0;
     int blocks = 1024;
-    uint64_t threads_per_wave = (uint64_t)blocks * BLOCK_SIZE;
+    int bsize = 128;
+    uint64_t threads_per_wave = (uint64_t)blocks * bsize;
 
     while (*cfg.running && u256_lt(cur, hi)) {
         CUDA_CHECK(cudaMemcpyAsync(g.d_fcount, &zero, sizeof(uint32_t), cudaMemcpyHostToDevice, g.stream));
 
-        search_kernel<<<blocks, BLOCK_SIZE, 0, g.stream>>>(
+        search_kernel<<<blocks, bsize, 0, g.stream>>>(
             cur.d[0], cur.d[1], cur.d[2], cur.d[3],
             cur.d[4], cur.d[5], cur.d[6], cur.d[7],
             g.d_tgt, g.d_fcount, g.d_fkeys_lo, g.d_fkeys_hi);
