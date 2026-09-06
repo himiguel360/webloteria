@@ -4429,8 +4429,8 @@ function precomputeBaseXY(keyBigInt) { if (!wasmInst) return null; var dv = wasm
 async function initGPU(sharedModule) {
     if (!navigator.gpu) return false;
     try {
-        adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
-        if (!adapter) adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        if (!adapter) adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
         if (!adapter) adapter = await navigator.gpu.requestAdapter();
         if (!adapter) return false;
         adapterInfo = {};
@@ -4603,8 +4603,8 @@ window.WebGPU_Turbo = { init: initGPU, setup: setupGPU, searchLoop: searchLoopGP
 
 const WALLETS = {
     '20': { address: '1HsMJxNiV7TLxmoF6uJNkydxPFDog4NQum', range: [0xc0000n, 0xe0000n], solved: true },
-    '65': { address: '18ZMbwUFLMHoZBbfpCjUJQTCMCbktshgpe', range: [0x1a838b13505b20000n, 0x1a838b13505b30000n], solved: false },
-    '66': { address: '13zb1hQbWVsc2S7ZTZnP2G4undNNpdh5so', range: [0x20000000000000000n, 0x3ffffffffffffffffn], solved: false },
+    '65': { address: '18ZMbwUFLMHoZBbfpCjUJQTCMCbktshgpe', range: [0x10000000000000000n, 0x1ffffffffffffffffn], solved: false },
+    '66': { address: '13zb1hQbWVsc2S7ZTZnP2G4undNNpdh5so', range: [0x20000000000000000n, 0x3ffffffffffffffffn], solved: true },
     '67': { address: '1BY8GQbnueYofwSuFAT3USAhGjPrkxDdW9', range: [0x40000000000000000n, 0x7ffffffffffffffffn], solved: false },
     '68': { address: '1MVDYgVaSN6iKKEsbzRUAYFrYJadLYZvvZ', range: [0x80000000000000000n, 0xfffffffffffffffffn], solved: false },
     '69': { address: '19vkiEajfhuZ8bs8Zu2jgmC6oqZbWqhxhG', range: [0x100000000000000000n, 0x1fffffffffffffffffn], solved: false },
