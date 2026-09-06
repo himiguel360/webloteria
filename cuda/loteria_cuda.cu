@@ -1,16 +1,12 @@
 /*
- * loteria_cuda.cu — Multi-GPU Bitcoin Puzzle Solver v2 (BATCH INVERSION)
+ * loteria_cuda.cu — Multi-GPU Bitcoin Puzzle Solver v3 (GPU-NATIVE)
  * CUDA kernel: secp256k1 + SHA-256 + RIPEMD-160
  *
- * Key optimization: Batch Montgomery inversion replaces per-key Fermat
- * exponentiation with 1 Fermat per BATCH_SIZE keys.
+ * v3: Each thread computes its own key*G on GPU (no CPU bottleneck).
+ *     Processes in waves to cover ranges > 2^64.
  *
- * Old: 256 threads × 128 keys × 1 Fermat = 32,768 Fermat exps
- * New: 256 threads × (1 Fermat + 127 muls) = 256 Fermat exps
- * Speedup on inversion: ~128x
- *
- * Compile: nvcc -O3 -o loteria loteria_cuda.cu -arch=sm_75
- * Run:     ./loteria --wallet 65 --gpus 8
+ * Compile: nvcc -O3 -o loteria loteria_cuda.cu -arch=sm_89
+ * Run:     ./loteria --wallet 71 --gpus 1
  */
 
 #include <cstdio>
@@ -24,10 +20,10 @@
 #include <string>
 #include <cuda_runtime.h>
 
-#define BATCH_SIZE       128
 #define BLOCK_SIZE       256
 #define MAX_GPUS         8
 #define FOUND_CACHE_SIZE 64
+#define KEYS_PER_WAVE    (1ULL << 32)
 
 /* ======================================================================
  * __constant__ arrays
@@ -75,16 +71,6 @@ __constant__ int d_SR[80] = {
     8,5,12,9,12,5,14,6,8,13,6,5,15,13,11,11
 };
 
-/* G-point constants (file scope) */
-__constant__ uint32_t d_GX[8] = {
-    0x16F81798,0x59F2815B,0x2DCE28D9,0x029BFCDB,
-    0xCE870B07,0x55A06295,0x5DCBBAC5,0x79BE667E
-};
-__constant__ uint32_t d_GY[8] = {
-    0xFB10D4B8,0x9C47D08F,0xA6855419,0xFD17B448,
-    0x0E1108A8,0x5DA4FBFC,0x26A3C465,0x483ADA77
-};
-
 /* ======================================================================
  * 256-bit integer — 8 x uint32 little-endian limbs
  * ====================================================================== */
@@ -104,10 +90,6 @@ struct uint256_t {
     }
     __host__ __device__ bool isZero() const {
         return d[0]==0&&d[1]==0&&d[2]==0&&d[3]==0&&d[4]==0&&d[5]==0&&d[6]==0&&d[7]==0;
-    }
-    __host__ __device__ bool operator==(const uint256_t& o) const {
-        return d[0]==o.d[0]&&d[1]==o.d[1]&&d[2]==o.d[2]&&d[3]==o.d[3]&&
-               d[4]==o.d[4]&&d[5]==o.d[5]&&d[6]==o.d[6]&&d[7]==o.d[7];
     }
     __host__ __device__ int getBit(int i) const {
         return (d[i/32] >> (i%32)) & 1;
@@ -171,12 +153,10 @@ __host__ __device__ uint256_t u256_add_u64(const uint256_t& a, uint64_t b) {
     return r;
 }
 
-/* Convert uint256_t to uint64_t (truncates upper limbs) */
 __host__ __device__ uint64_t u256_to_u64(const uint256_t& a) {
     return ((uint64_t)a.d[1] << 32) | a.d[0];
 }
 
-/* Print uint256_t as hex */
 __host__ void u256_print(const uint256_t& a) {
     bool started = false;
     for (int i = 7; i >= 0; i--) {
@@ -267,7 +247,7 @@ __host__ __device__ uint256_t field_mul(const uint256_t& a, const uint256_t& b) 
 
 __host__ __device__ uint256_t field_sqr(const uint256_t& a) { return field_mul(a, a); }
 
-/* Modular inverse via Fermat: a^(P-2) mod P — addition chain (250 ops) */
+/* Modular inverse via Fermat: a^(P-2) mod P */
 __host__ __device__ uint256_t field_inv(const uint256_t& a) {
     uint256_t result(1);
     uint256_t base = a;
@@ -462,12 +442,6 @@ __device__ void ripemd160(const uint8_t* data, int len, uint8_t out20[20]) {
     }
 }
 
-__device__ void hash160_comp(const uint256_t& x, uint8_t prefix, uint8_t h[20]) {
-    uint8_t sha[32];
-    sha256_compressed(x, prefix, sha);
-    ripemd160(sha, 32, h);
-}
-
 /* ======================================================================
  * Target hash160 matching
  * ====================================================================== */
@@ -477,12 +451,6 @@ struct TargetHash { uint8_t bytes[20]; };
 __device__ bool hash_match(const uint8_t h[20], const TargetHash* t) {
     for (int i=0; i<20; i++) if (h[i]!=t->bytes[i]) return false;
     return true;
-}
-
-/* 4-byte partial match for early exit */
-__device__ bool hash_match_4(const uint8_t h[20], const TargetHash* t) {
-    return (h[0]==t->bytes[0]) && (h[1]==t->bytes[1]) &&
-           (h[2]==t->bytes[2]) && (h[3]==t->bytes[3]);
 }
 
 /* ======================================================================
@@ -498,109 +466,67 @@ __device__ bool hash_match_4(const uint8_t h[20], const TargetHash* t) {
 } while(0)
 
 /* ======================================================================
- * BATCH INVERSION kernel — replaces per-key field_inv
+ * GPU-NATIVE KERNEL — each thread computes its own key*G
  *
- * Montgomery's trick: to invert N values {z0, z1, ..., zN-1}:
- *   1. Compute forward products: p[0]=z[0], p[i]=p[i-1]*z[i]
- *   2. Compute one inverse: inv = 1/p[N-1]
- *   3. Back-substitute: zInv[N-1] = inv; inv = inv*z[N-1];
- *      zInv[i] = inv; inv = inv*z[i];
- *   Result: {1/z0, 1/z1, ..., 1/zN-1} with 1 Fermat + (N-1) muls
- *
- * This kernel processes BATCH_SIZE=128 points per thread.
+ * Each thread:
+ *   1. key = wave_start + global_thread_id  (uint256 + uint64)
+ *   2. P = scalar_mul_g(key)  on GPU
+ *   3. (x, y) = to_affine(P)  (each thread does its own field_inv)
+ *   4. h = RIPEMD160(SHA256(compressed_pubkey))
+ *   5. if h == target: FOUND
  * ====================================================================== */
 
-__global__ void search_kernel_batch(
-    const uint32_t* bx, const uint32_t* by,
-    const TargetHash* tgt, uint32_t* fcount, uint32_t* fkeys, uint32_t bsz)
+__global__ void search_kernel(
+    uint32_t s0, uint32_t s1, uint32_t s2, uint32_t s3,
+    uint32_t s4, uint32_t s5, uint32_t s6, uint32_t s7,
+    const TargetHash* tgt, uint32_t* fcount,
+    uint32_t* fkeys_lo, uint32_t* fkeys_hi)
 {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    uint64_t tid = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
 
-    /* Load base point for this block */
-    uint256_t base_x, base_y;
-    for (int i=0; i<8; i++) {
-        base_x.d[i] = bx[blockIdx.x*8+i];
-        base_y.d[i] = by[blockIdx.x*8+i];
-    }
+    /* key = wave_start + tid */
+    uint256_t key;
+    uint64_t carry = tid;
+    uint64_t sum = (uint64_t)s0 + (uint32_t)(carry & 0xFFFFFFFFULL);
+    key.d[0] = (uint32_t)(sum & 0xFFFFFFFFULL);
+    carry = (carry >> 32);
+    sum = (uint64_t)s1 + (uint32_t)(carry & 0xFFFFFFFFULL) + (sum >> 32);
+    key.d[1] = (uint32_t)(sum & 0xFFFFFFFFULL);
+    carry = sum >> 32;
+    sum = (uint64_t)s2 + carry;
+    key.d[2] = (uint32_t)(sum & 0xFFFFFFFFULL); carry = sum >> 32;
+    sum = (uint64_t)s3 + carry;
+    key.d[3] = (uint32_t)(sum & 0xFFFFFFFFULL); carry = sum >> 32;
+    sum = (uint64_t)s4 + carry;
+    key.d[4] = (uint32_t)(sum & 0xFFFFFFFFULL); carry = sum >> 32;
+    sum = (uint64_t)s5 + carry;
+    key.d[5] = (uint32_t)(sum & 0xFFFFFFFFULL); carry = sum >> 32;
+    sum = (uint64_t)s6 + carry;
+    key.d[6] = (uint32_t)(sum & 0xFFFFFFFFULL); carry = sum >> 32;
+    sum = (uint64_t)s7 + carry;
+    key.d[7] = (uint32_t)(sum & 0xFFFFFFFFULL);
 
-    /* Load G-point into registers (once, reused) */
-    uint256_t gx, gy;
-    for (int i=0; i<8; i++) {
-        gx.d[i] = d_GX[i];
-        gy.d[i] = d_GY[i];
-    }
+    /* Scalar multiply: P = key * G */
+    JacPoint P = scalar_mul_g(key);
+    if (P.z.isZero()) return;
 
-    /*
-     * Phase 1: Generate BATCH_SIZE Jacobian points via sequential +G
-     * Store Z coordinates for batch inversion (no field_inv here!)
-     */
-    JacPoint pts[BATCH_SIZE];
-    uint256_t z_coords[BATCH_SIZE];
+    /* Convert to affine */
+    AffPoint A = to_affine(P);
 
-    JacPoint cur;
-    cur.x = base_x;
-    cur.y = base_y;
-    cur.z = uint256_t(1);
+    /* Compressed public key */
+    uint8_t prefix = (A.y.d[0] & 1) ? 0x03 : 0x02;
 
-    /* Offset: base + tid * BATCH_SIZE sequential steps */
-    for (int s = 0; s < (int)tid * BATCH_SIZE; s++) {
-        cur = pt_add_mixed(cur, gx, gy);
-    }
+    /* SHA-256 + RIPEMD-160 */
+    uint8_t sha[32], h160[20];
+    sha256_compressed(A.x, prefix, sha);
+    ripemd160(sha, 32, h160);
 
-    for (int k = 0; k < BATCH_SIZE; k++) {
-        pts[k] = cur;
-        z_coords[k] = cur.z;
-        cur = pt_add_mixed(cur, gx, gy);
-    }
-
-    /*
-     * Phase 2: Batch Montgomery inversion
-     * Compute all 1/z[i] from z_coords using 1 Fermat + (BATCH_SIZE-1) muls
-     */
-    uint256_t fwd[BATCH_SIZE];  /* forward products */
-    fwd[0] = z_coords[0];
-    for (int i = 1; i < BATCH_SIZE; i++) {
-        fwd[i] = field_mul(fwd[i-1], z_coords[i]);
-    }
-
-    /* One Fermat exponentiation: 1 / (z0 * z1 * ... * zN-1) */
-    uint256_t inv = field_inv(fwd[BATCH_SIZE - 1]);
-
-    /* Back-substitute to get individual inversions */
-    uint256_t inv_z[BATCH_SIZE];
-
-    for (int i = BATCH_SIZE - 1; i >= 1; i--) {
-        inv_z[i] = field_mul(inv, fwd[i-1]);
-        inv = field_mul(inv, z_coords[i]);
-    }
-    inv_z[0] = inv;
-
-    /*
-     * Phase 3: Convert to affine using precomputed 1/z, build compressed pubkey,
-     * SHA-256 + RIPEMD-160, and check against target
-     */
-    for (int k = 0; k < BATCH_SIZE; k++) {
-        if (pts[k].z.isZero()) continue;
-
-        uint256_t zi = inv_z[k];
-        uint256_t zi2 = field_sqr(zi);
-        uint256_t ax = field_mul(pts[k].x, zi2);
-        uint256_t ay = field_mul(pts[k].y, field_mul(zi2, zi));
-
-        uint8_t pfx = (ay.d[0] & 1) ? 0x03 : 0x02;
-
-        /* Quick 4-byte partial match before full hash */
-        uint8_t h160[20];
-        uint8_t sha[32];
-        sha256_compressed(ax, pfx, sha);
-        ripemd160(sha, 32, h160);
-
-        if (hash_match(h160, tgt)) {
-            uint32_t idx = atomicAdd(fcount, 1u);
-            if (idx < FOUND_CACHE_SIZE) {
-                uint64_t key_offset = (uint64_t)blockIdx.x * bsz + (uint64_t)tid * BATCH_SIZE + k;
-                fkeys[idx] = (uint32_t)(key_offset & 0xFFFFFFFF);
-            }
+    /* Check against target */
+    if (hash_match(h160, tgt)) {
+        uint32_t idx = atomicAdd(fcount, 1u);
+        if (idx < FOUND_CACHE_SIZE) {
+            fkeys_lo[idx] = (uint32_t)(tid & 0xFFFFFFFFULL);
+            fkeys_hi[idx] = (uint32_t)(tid >> 32);
         }
     }
 }
@@ -611,9 +537,8 @@ __global__ void search_kernel_batch(
 
 struct GPUContext {
     int id;
-    uint32_t *d_bx, *d_by;
     TargetHash *d_tgt;
-    uint32_t *d_fcount, *d_fkeys;
+    uint32_t *d_fcount, *d_fkeys_lo, *d_fkeys_hi;
     cudaStream_t stream;
     uint64_t keys_checked, dispatches;
 };
@@ -651,12 +576,16 @@ struct WorkCfg {
     std::atomic<int>* finished_count;
 };
 
+/* Compute total keys in range (hi - lo) as approximate uint64 */
+static uint256_t range_size(const uint256_t& lo, const uint256_t& hi) {
+    return u256_sub(hi, lo);
+}
+
 void gpu_thread(WorkCfg cfg) {
     GPUContext& g = *cfg.g;
     CUDA_CHECK(cudaSetDevice(cfg.gpu_id));
     CUDA_CHECK(cudaStreamCreate(&g.stream));
 
-    /* Split range across GPUs using u256 arithmetic */
     uint256_t my_lo = cfg.lo;
     uint256_t my_hi = cfg.hi;
     if (cfg.num_gpus > 1) {
@@ -667,64 +596,48 @@ void gpu_thread(WorkCfg cfg) {
         my_hi = (cfg.gpu_id == cfg.num_gpus - 1) ? cfg.hi : u256_add_u64(my_lo, per);
     }
 
-    printf("[GPU %d] scanning %llu keys\n", cfg.gpu_id,
-           (unsigned long long)u256_to_u64(u256_sub(my_hi, my_lo)));
+    printf("[GPU %d] range: ", cfg.gpu_id);
+    u256_print(my_lo);
+    printf(" .. ");
+    u256_print(my_hi);
+    printf("\n");
 
-    CUDA_CHECK(cudaMemcpy(g.d_tgt,&cfg.tgt,sizeof(TargetHash),cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(g.d_tgt, &cfg.tgt, sizeof(TargetHash), cudaMemcpyHostToDevice));
 
     uint256_t cur = my_lo;
-    int max_b = BLOCK_SIZE * BATCH_SIZE;
+    uint256_t hi = my_hi;
+    int blocks = 1024;
+    uint64_t threads_per_wave = (uint64_t)blocks * BLOCK_SIZE;
 
-    while (*cfg.running && u256_lt(cur, my_hi)) {
-        int batch = max_b;
-        uint256_t rem = u256_sub(my_hi, cur);
-        uint64_t rem64 = u256_to_u64(rem);
-        if ((uint64_t)batch > rem64) batch = (int)rem64;
-        int nblk = (batch + BLOCK_SIZE * BATCH_SIZE - 1) / (BLOCK_SIZE * BATCH_SIZE);
+    while (*cfg.running && u256_lt(cur, hi)) {
+        CUDA_CHECK(cudaMemcpyAsync(g.d_fcount, &zero, sizeof(uint32_t), cudaMemcpyHostToDevice, g.stream));
 
-        std::vector<uint32_t> hbx(nblk*8), hby(nblk*8);
-        for (int b=0; b<nblk; b++) {
-            uint64_t block_offset = (uint64_t)b * BLOCK_SIZE * BATCH_SIZE;
-            uint256_t block_key = u256_add_u64(cur, block_offset);
-            JacPoint pt = scalar_mul_g(block_key);
-            AffPoint a = to_affine(pt);
-            for (int i=0; i<8; i++) { hbx[b*8+i]=a.x.d[i]; hby[b*8+i]=a.y.d[i]; }
-        }
-
-        CUDA_CHECK(cudaMemcpyAsync(g.d_bx,hbx.data(),nblk*8*sizeof(uint32_t),
-                     cudaMemcpyHostToDevice,g.stream));
-        CUDA_CHECK(cudaMemcpyAsync(g.d_by,hby.data(),nblk*8*sizeof(uint32_t),
-                     cudaMemcpyHostToDevice,g.stream));
-        uint32_t z=0;
-        CUDA_CHECK(cudaMemcpyAsync(g.d_fcount,&z,sizeof(uint32_t),
-                     cudaMemcpyHostToDevice,g.stream));
-
-        search_kernel_batch<<<nblk,BLOCK_SIZE,0,g.stream>>>(
-            g.d_bx,g.d_by,g.d_tgt,g.d_fcount,g.d_fkeys,
-            BLOCK_SIZE * BATCH_SIZE);
+        search_kernel<<<blocks, BLOCK_SIZE, 0, g.stream>>>(
+            cur.d[0], cur.d[1], cur.d[2], cur.d[3],
+            cur.d[4], cur.d[5], cur.d[6], cur.d[7],
+            g.d_tgt, g.d_fcount, g.d_fkeys_lo, g.d_fkeys_hi);
 
         CUDA_CHECK(cudaStreamSynchronize(g.stream));
 
-        uint32_t hc=0;
-        CUDA_CHECK(cudaMemcpy(&hc,g.d_fcount,sizeof(uint32_t),cudaMemcpyDeviceToHost));
-        if (hc>0) {
-            uint32_t hk[FOUND_CACHE_SIZE];
-            int n=hc<FOUND_CACHE_SIZE?hc:FOUND_CACHE_SIZE;
-            CUDA_CHECK(cudaMemcpy(hk,g.d_fkeys,n*sizeof(uint32_t),cudaMemcpyDeviceToHost));
-            for (int i=0; i<n; i++) {
-                uint64_t offset = (uint64_t)nblk * BLOCK_SIZE * BATCH_SIZE;
-                uint256_t fk = u256_add_u64(cur, hk[i]);
+        uint32_t hc = 0;
+        CUDA_CHECK(cudaMemcpy(&hc, g.d_fcount, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+        if (hc > 0) {
+            uint32_t klo[FOUND_CACHE_SIZE], khi[FOUND_CACHE_SIZE];
+            int n = hc < FOUND_CACHE_SIZE ? hc : FOUND_CACHE_SIZE;
+            CUDA_CHECK(cudaMemcpy(klo, g.d_fkeys_lo, n*sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(khi, g.d_fkeys_hi, n*sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            for (int i = 0; i < n; i++) {
+                uint64_t tid_found = ((uint64_t)khi[i] << 32) | klo[i];
+                uint256_t fk = u256_add_u64(cur, tid_found);
                 printf("\n*** FOUND key (GPU %d)! ***\n", cfg.gpu_id);
-                printf("Key (LE limbs): %08x %08x %08x %08x %08x %08x %08x %08x\n",
-                       fk.d[0],fk.d[1],fk.d[2],fk.d[3],fk.d[4],fk.d[5],fk.d[6],fk.d[7]);
+                printf("Key (LE): "); u256_print(fk); printf("\n");
             }
             cfg.running->store(false);
         }
 
-        uint64_t step = (uint64_t)nblk * BLOCK_SIZE * BATCH_SIZE;
-        g.keys_checked += step;
+        g.keys_checked += threads_per_wave;
         g.dispatches++;
-        cur = u256_add_u64(cur, step);
+        cur = u256_add_u64(cur, threads_per_wave);
     }
     CUDA_CHECK(cudaStreamDestroy(g.stream));
     cfg.finished_count->fetch_add(1);
@@ -733,10 +646,8 @@ void gpu_thread(WorkCfg cfg) {
 void print_usage(){printf("Usage: ./loteria --wallet N [--gpus N]\n");}
 
 int main(int argc, char** argv) {
-    printf("=== Multi-GPU Bitcoin Puzzle Solver v2 (BATCH INVERSION) ===\n\n");
-    printf("Optimization: %d-key batch Montgomery inversion per thread\n", BATCH_SIZE);
-    printf("Before: %d Fermat exps per thread | After: 1 Fermat + %d muls\n\n",
-           BATCH_SIZE, BATCH_SIZE - 1);
+    printf("=== Multi-GPU Bitcoin Puzzle Solver v3 (GPU-NATIVE) ===\n\n");
+    printf("Each thread computes key*G on GPU (no CPU bottleneck)\n\n");
 
     int wnum=65, ngpu=0;
     for (int i=1; i<argc; i++) {
@@ -772,15 +683,13 @@ int main(int argc, char** argv) {
 
     GPUContext gpu[MAX_GPUS];
     memset(gpu,0,sizeof(gpu));
-    int mb=BLOCK_SIZE*BATCH_SIZE;
     for (int i=0; i<ngpu; i++) {
         CUDA_CHECK(cudaSetDevice(i));
         gpu[i].id=i; gpu[i].keys_checked=0; gpu[i].dispatches=0;
-        CUDA_CHECK(cudaMalloc(&gpu[i].d_bx, mb*8*sizeof(uint32_t)));
-        CUDA_CHECK(cudaMalloc(&gpu[i].d_by, mb*8*sizeof(uint32_t)));
         CUDA_CHECK(cudaMalloc(&gpu[i].d_tgt, sizeof(TargetHash)));
         CUDA_CHECK(cudaMalloc(&gpu[i].d_fcount, sizeof(uint32_t)));
-        CUDA_CHECK(cudaMalloc(&gpu[i].d_fkeys, FOUND_CACHE_SIZE*sizeof(uint32_t)));
+        CUDA_CHECK(cudaMalloc(&gpu[i].d_fkeys_lo, FOUND_CACHE_SIZE*sizeof(uint32_t)));
+        CUDA_CHECK(cudaMalloc(&gpu[i].d_fkeys_hi, FOUND_CACHE_SIZE*sizeof(uint32_t)));
     }
 
     std::atomic<bool> running(true);
@@ -809,11 +718,10 @@ int main(int argc, char** argv) {
     for (int i=0; i<ngpu; i++) {
         total+=gpu[i].keys_checked;
         CUDA_CHECK(cudaSetDevice(i));
-        CUDA_CHECK(cudaFree(gpu[i].d_bx));
-        CUDA_CHECK(cudaFree(gpu[i].d_by));
         CUDA_CHECK(cudaFree(gpu[i].d_tgt));
         CUDA_CHECK(cudaFree(gpu[i].d_fcount));
-        CUDA_CHECK(cudaFree(gpu[i].d_fkeys));
+        CUDA_CHECK(cudaFree(gpu[i].d_fkeys_lo));
+        CUDA_CHECK(cudaFree(gpu[i].d_fkeys_hi));
     }
     printf("\n\n=== Done ===\nTotal: %.2f B keys in %.1fs (%.2f GH/s)\n",
            total/1e9,elap,elap>0?total/elap/1e9:0);
