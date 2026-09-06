@@ -5837,6 +5837,11 @@ function repositionSearch(newPct) {
     _lastRepositionKey = newKey;
     currentBlockTracker.save();
 
+    var pctInputEl = document.getElementById('pct-input');
+    if (pctInputEl) pctInputEl.value = String(newPct);
+    var thumb = document.getElementById('progress-thumb');
+    if (thumb && !_thumbDragging) thumb.style.left = newPct + '%';
+
     totalRange = rangeEnd - newKey;
     startTime = performance.now();
     lastCount = totalKeys;
