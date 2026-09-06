@@ -4130,8 +4130,8 @@ hr {
 
               <!-- Search Mode Toggle -->
               <div class="field">
-                <label class="field__label">Modo de busca</label>
-                <div class="wl-mode-toggle">
+                <label class="field__label" id="lbl-mode">Modo de busca</label>
+                <div class="wl-mode-toggle" role="radiogroup" aria-labelledby="lbl-mode">
                   <button class="wl-mode-btn" data-mode="random" id="mode-random" type="button">Aleatório</button>
                   <button class="wl-mode-btn" data-mode="sequential" id="mode-sequential" type="button">Sequencial</button>
                   <button class="wl-mode-btn is-active" data-mode="hybrid" id="mode-hybrid" type="button">Híbrido</button>
@@ -4141,8 +4141,8 @@ hr {
 
               <!-- Multi-GPU Selector -->
               <div class="field" id="multi-gpu-field">
-                <label class="field__label">GPUs paralelas</label>
-                <div class="wl-mode-toggle">
+                <label class="field__label" id="lbl-gpus">GPUs paralelas</label>
+                <div class="wl-mode-toggle" role="radiogroup" aria-labelledby="lbl-gpus">
                   <button class="wl-mode-btn gpu-count-btn is-active" data-gpus="1" type="button">1 GPU</button>
                   <button class="wl-mode-btn gpu-count-btn" data-gpus="2" type="button">2 GPUs</button>
                   <button class="wl-mode-btn gpu-count-btn" data-gpus="4" type="button">4 GPUs</button>
@@ -4153,17 +4153,17 @@ hr {
 
               <!-- Percentage Start Slider -->
               <div class="field" id="pct-start-field">
-                <label class="field__label">Posição inicial: <span id="pct-val">0%</span></label>
+                <label class="field__label" for="pct-slider">Posição inicial: <span id="pct-val">0%</span></label>
                 <div class="wl-pct-row">
                   <input type="range" class="wl-pct-slider" id="pct-slider"
                          min="0" max="100" step="0.0001" value="0">
                   <input type="text" class="wl-pct-input" id="pct-input"
-                         placeholder="%" autocomplete="off">
+                         placeholder="%" autocomplete="off" aria-label="Posicao em porcentagem">
                 </div>
                 <div class="wl-pct-hex" id="pct-hex"></div>
                 <div class="wl-hex-row">
                   <input type="text" class="wl-hex-input" id="hex-key-input"
-                         placeholder="Chave hex (64 chars)..." autocomplete="off" spellcheck="false" maxlength="64">
+                         placeholder="Chave hex (64 chars)..." autocomplete="off" spellcheck="false" maxlength="64" aria-label="Chave hexadecimal">
                   <button class="btn btn--ghost btn--sm" id="hex-key-verify" type="button">Verificar</button>
                 </div>
                 <div class="wl-hex-row" style="margin-top:4px;">
@@ -4171,7 +4171,7 @@ hr {
                 </div>
                 <div class="wl-hex-row" style="margin-top:4px; gap:4px;">
                   <button class="btn btn--ghost btn--sm" id="auto-scan-btn" type="button">▶ Scan</button>
-                  <select id="auto-scan-speed" class="wl-hex-input" style="width:auto; padding:4px 6px; font-size:11px;">
+                  <select id="auto-scan-speed" class="wl-hex-input" style="width:auto; padding:4px 6px; font-size:11px;" aria-label="Velocidade do scan automatico">
                     <option value="1seq">1 a 1</option>
                     <option value="0.0001">0.0001%</option>
                     <option value="0.001">0.001%</option>
@@ -4216,7 +4216,7 @@ hr {
                   <button class="btn btn--ghost btn--sm" id="batch-clear" type="button">Limpar</button>
                 </div>
                 <div class="wl-batch__add">
-                  <input type="text" class="wl-batch__input" id="batch-input" placeholder="Ex: 25.5, 50, 75.123" autocomplete="off" style="flex:1; min-width:0;">
+                  <input type="text" class="wl-batch__input" id="batch-input" placeholder="Ex: 25.5, 50, 75.123" autocomplete="off" style="flex:1; min-width:0;" aria-label="Porcentagens para verificacao em lote">
                   <button class="btn btn--primary btn--sm" id="batch-add" type="button">Adicionar</button>
                 </div>
                 <div class="wl-batch__add">
