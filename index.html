@@ -4438,6 +4438,22 @@ async function initGPU(sharedModule) {
         keysPerDispatch = Math.max(baseKeys * 48, keysPerDispatch);
         if (vendor === 'nvidia') { keysPerDispatch = Math.max(baseKeys * 256, keysPerDispatch); }
         else if (vendor === 'amd') { keysPerDispatch = Math.max(baseKeys * 128, keysPerDispatch); }
+        else {
+            var maxBuf = adapter.limits ? adapter.limits.maxBufferSize : 0;
+            var maxWG = adapter.limits ? adapter.limits.maxComputeWorkgroupsPerDimension : 0;
+            if (maxBuf >= 1073741824 && maxWG >= 65535) {
+                vendor = 'nvidia';
+                gpuProfile = GPU_PROFILES['nvidia'];
+                WORKGROUP_SIZE = gpuProfile.workgroupSize;
+                BATCH_SIZE_INNER = gpuProfile.batchSize;
+                maxWorkgroups = gpuProfile.maxWorkgroups;
+                baseKeys = WORKGROUP_SIZE * BATCH_SIZE_INNER;
+                keysPerDispatch = Math.max(baseKeys * 256, keysPerDispatch);
+                console.log('[WebGPU] Heuristic: high-end GPU detected (buf=' + maxBuf + ', wg=' + maxWG + '), using nvidia profile');
+            } else {
+                keysPerDispatch = Math.max(baseKeys * 96, keysPerDispatch);
+            }
+        }
         device = await adapter.requestDevice({});
         device.lost.then(function(info) { console.warn('[WebGPU] Device lost:', info.message); if (gpuRunning) recoverGPU(); });
         restoreCalibration();
@@ -4473,21 +4489,21 @@ var _calibHistory = [];
 var _calibLastChange = 0;
 function calibrateGPU(elapsedMs) {
     _calibHistory.push(elapsedMs);
-    if (_calibHistory.length > 12) _calibHistory.shift();
-    if (_calibHistory.length < 4) return;
-    if (performance.now() - _calibLastChange < 500) return;
+    if (_calibHistory.length > 8) _calibHistory.shift();
+    if (_calibHistory.length < 3) return;
+    if (performance.now() - _calibLastChange < 300) return;
     var avg = 0; for (var i = 0; i < _calibHistory.length; i++) avg += _calibHistory[i];
     avg /= _calibHistory.length;
     var next = keysPerDispatch;
     var min = WORKGROUP_SIZE * BATCH_SIZE_INNER;
     if (avg > MAX_DISPATCH_MS) {
-        next = Math.max(min, Math.floor(next * 0.75));
-    } else if (avg > TARGET_DISPATCH_MS) {
+        next = Math.max(min, Math.floor(next * 0.7));
+    } else if (avg > TARGET_DISPATCH_MS * 1.2) {
         next = Math.max(min, Math.floor(next * 0.9));
     } else if (avg < MIN_DISPATCH_MS) {
-        next = Math.min(1 << 26, Math.floor(next * 1.08));
-    } else if (avg < TARGET_DISPATCH_MS * 0.7) {
-        next = Math.min(1 << 26, Math.floor(next * 1.04));
+        next = Math.min(1 << 26, Math.floor(next * 1.3));
+    } else if (avg < TARGET_DISPATCH_MS * 0.6) {
+        next = Math.min(1 << 26, Math.floor(next * 1.15));
     }
     if (next !== keysPerDispatch) {
         keysPerDispatch = next;
