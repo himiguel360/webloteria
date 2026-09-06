@@ -556,7 +556,8 @@ __device__ __forceinline__ uint256_t warp_batch_inv(uint256_t my_z) {
  *   5. if h == target: FOUND
  * ====================================================================== */
 
-__global__ void search_kernel(
+__global__ void __launch_bounds__(256, 2)
+search_kernel(
     uint32_t s0, uint32_t s1, uint32_t s2, uint32_t s3,
     uint32_t s4, uint32_t s5, uint32_t s6, uint32_t s7,
     const TargetHash* tgt, uint32_t* fcount,
@@ -590,20 +591,15 @@ __global__ void search_kernel(
     JacPoint P = scalar_mul_g(key);
     if (P.z.isZero()) return;
 
-    /* Warp-level batch inversion of Z coordinates */
-    uint256_t inv_z = warp_batch_inv(P.z);
-
-    /* Convert to affine using batch-inverted Z */
-    uint256_t zi2 = field_sqr(inv_z);
-    uint256_t ax = field_mul(P.x, zi2);
-    uint256_t ay = field_mul(P.y, field_mul(zi2, inv_z));
+    /* Convert to affine */
+    AffPoint A = to_affine(P);
 
     /* Compressed public key */
-    uint8_t prefix = (ay.d[0] & 1) ? 0x03 : 0x02;
+    uint8_t prefix = (A.y.d[0] & 1) ? 0x03 : 0x02;
 
     /* SHA-256 + RIPEMD-160 */
     uint8_t sha[32], h160[20];
-    sha256_compressed(ax, prefix, sha);
+    sha256_compressed(A.x, prefix, sha);
     ripemd160(sha, 32, h160);
 
     /* Check against target */
