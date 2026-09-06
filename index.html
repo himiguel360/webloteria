@@ -4715,6 +4715,7 @@ let speedTimer = null;
 let lastCount = 0n;
 let lastStatsKey = 0;
 let _speedAvg = [];
+let _lastSpeedSync = 0;
 let WORKER_URL = null;
 let rangeStart = 0n;
 let rangeEnd = 0n;
@@ -4739,12 +4740,12 @@ let _randomJumpTimer = null;
 let _randomJumpActive = false;
 let _autoScanTimer = null;
 let _randomExataTicksLeft = 0;
-let _randomExataBase = null;
+let _randomExataStart = 0;
 let gpuAvailable = false;
 let gpuSearchActive = false;
 var _activePipeB = 2048;
 var _sharedWasmModule = null;
-var _wasmModuleReady = null;
+
 var multiGpuCount = 0;
 
 /* ------------------------------------------------------------------ */
@@ -5842,10 +5843,10 @@ function repositionSearch(newPct) {
     var thumb = document.getElementById('progress-thumb');
     if (thumb && !_thumbDragging) thumb.style.left = newPct + '%';
 
-    totalRange = rangeEnd - newKey;
-    startTime = performance.now();
+    totalRange = rangeEnd - rangeStart;
     lastCount = totalKeys;
     lastStatsKey = 0;
+    _speedAvg = [];
 
     var newStart = newKey.toString(16);
     var newEnd = rangeEnd.toString(16);
@@ -6167,7 +6168,8 @@ BlockTracker.prototype.importJSON = function(json) {
 /* ------------------------------------------------------------------ */
 
 function currentWorkerCount() {
-    const v = document.getElementById('worker-count').value;
+    const el = document.getElementById('worker-count');
+    const v = el ? el.value : 'auto';
     if (v === 'auto') {
         return navigator.hardwareConcurrency || 4;
     }
@@ -6180,6 +6182,7 @@ function currentWorkerCount() {
 function setEngineState(state) {
     const dot = document.getElementById('engine-dot');
     const label = document.getElementById('engine-label');
+    if (!dot || !label) return;
     dot.className = 'wl-engine__dot wl-engine__dot--' + state;
     if (state === 'running') label.textContent = 'Buscando';
     else if (state === 'ready') label.textContent = 'Pronto';
@@ -6286,6 +6289,7 @@ async function start() {
     rangeEnd = w.range[1];
     totalKeys = 0n;
     doneCount = 0;
+    _foundKeys.clear();
     stopRequested = false;
     startTime = performance.now();
     running = true;
@@ -6548,6 +6552,7 @@ async function start() {
     lastCount = 0n;
     lastStatsKey = 0;
     _speedAvg = [];
+    if (!running) return;
     speedTimer = setInterval(updateStats, 1000);
     blockSaveTimer = setInterval(function() {
         if (currentBlockTracker && running) currentBlockTracker.save();
@@ -6572,7 +6577,7 @@ function stopAll() {
     clearInterval(speedTimer);
     clearInterval(blockSaveTimer);
     if (liveKeysTimer) { clearTimeout(liveKeysTimer); liveKeysTimer = null; }
-    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataBase = null; var rjb = document.getElementById('random-jump-btn'); if (rjb) { rjb.textContent = '🎲 Auto-random (60s)'; rjb.style.background = ''; rjb.style.color = ''; } }
+    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataStart = 0; var rjb = document.getElementById('random-jump-btn'); if (rjb) { rjb.textContent = '🎲 Auto-random (60s)'; rjb.style.background = ''; rjb.style.color = ''; } }
     if (_autoScanTimer) { clearInterval(_autoScanTimer); _autoScanTimer = null; var asb = document.getElementById('auto-scan-btn'); if (asb) asb.textContent = '▶ Scan'; }
     _stopSync();
     if (currentBlockTracker) currentBlockTracker.save();
@@ -6603,7 +6608,7 @@ function finishAllDone() {
     clearInterval(speedTimer);
     clearInterval(blockSaveTimer);
     if (liveKeysTimer) { clearTimeout(liveKeysTimer); liveKeysTimer = null; }
-    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataBase = null; }
+    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataStart = 0; }
     if (_autoScanTimer) { clearInterval(_autoScanTimer); _autoScanTimer = null; var asb = document.getElementById('auto-scan-btn'); if (asb) asb.textContent = '▶ Scan'; }
     _stopSync();
     if (currentBlockTracker) {
@@ -6649,14 +6654,15 @@ function handleFound(keyHex) {
     gpuSearchActive = false;
     _thumbDragging = false;
     _lastRepositionKey = 0n;
+    if (MultiGPU.isWorker) MultiGPU.workerReportFound(keyHex);
     if (typeof WebGPU_Turbo !== 'undefined') WebGPU_Turbo.stop();
     if (MultiGPU.isCoordinator) MultiGPU.coordinatorStop();
-    if (MultiGPU.isWorker) MultiGPU.workerReportFound(keyHex);
     terminateWorkers();
+    if (_batchScan.active) _batchScanStop();
     clearInterval(speedTimer);
     clearInterval(blockSaveTimer);
     if (liveKeysTimer) { clearTimeout(liveKeysTimer); liveKeysTimer = null; }
-    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataBase = null; }
+    if (_randomJumpTimer) { clearInterval(_randomJumpTimer); _randomJumpTimer = null; _randomJumpActive = false; _randomExataTicksLeft = 0; _randomExataStart = 0; }
     if (_autoScanTimer) { clearInterval(_autoScanTimer); _autoScanTimer = null; var asb = document.getElementById('auto-scan-btn'); if (asb) asb.textContent = '▶ Scan'; }
     setEngineState('ready');
 
@@ -6676,6 +6682,13 @@ function handleFound(keyHex) {
     _syncToServer(keyHex);
     displayFoundKeys();
     renderFoundCards();
+
+    var fpk = document.getElementById('found-panel-key');
+    if (fpk) fpk.textContent = keyHex;
+    var fpa = document.getElementById('found-panel-addr');
+    if (fpa) fpa.textContent = address;
+    var fp = document.getElementById('found-panel');
+    if (fp) fp.style.display = '';
 
     document.getElementById('stats-card').style.display = 'none';
     document.getElementById('progress-section').style.display = 'none';
@@ -6723,13 +6736,12 @@ function updateStats() {
         if (hp) hp.textContent = trackerPct.toFixed(4) + '%';
     }
 
-    if (_lastSpeedSync === undefined) _lastSpeedSync = 0;
     var now = Date.now();
     if (now - _lastSpeedSync > 30000 && currentSel) {
         _lastSpeedSync = now;
         var gpuS = 0, cpuS = 0;
-        if (gpuSearchActive && typeof WebGPU_Turbo !== 'undefined' && WebGPU_Turbo._stats) {
-            gpuS = WebGPU_Turbo._stats.keysPerSec || 0;
+        if (gpuSearchActive && typeof WebGPU_Turbo !== 'undefined' && WebGPU_Turbo.totalChecked > 0n) {
+            gpuS = Number(totalKeys) / Math.max(1, (performance.now() - startTime) / 1000);
         }
         var speedEl2 = document.getElementById('speed');
         cpuS = speedEl2 ? parseInt(speedEl2.textContent.replace(/,/g, '')) || 0 : 0;
@@ -7179,7 +7191,6 @@ function initSliderListeners() {
             if (next > 100) next = 0;
             slider.value = next;
         }
-        updateSliderFast();
         updateSliderFull();
     }
 
@@ -7230,8 +7241,8 @@ function initSliderListeners() {
 
         if (_randomExataTicksLeft > 0) {
             _randomExataTicksLeft--;
-            var elapsed = 25 * (3 - _randomExataTicksLeft);
-            log('🔬 Exata: ' + elapsed + 's/75s — manter posição');
+            var elapsed = Math.round((performance.now() - _randomExataStart) / 1000);
+            log('🔬 Exata: ' + elapsed + 's — manter posição');
             return;
         }
 
@@ -7254,7 +7265,7 @@ function initSliderListeners() {
             newPct = basePct;
             tipo = 'exata';
             _randomExataTicksLeft = 3;
-            _randomExataBase = pctToKey(String(newPct));
+            _randomExataStart = performance.now();
         }
         repositionSearch(newPct);
         var key = pctToKey(String(newPct));
@@ -8276,6 +8287,7 @@ function fmtDate(iso) {
 function displayFoundKeys() {
     const list = document.getElementById('found-keys-list');
     const clearBtn = document.getElementById('clear-keys');
+    if (!list) return;
     list.innerHTML = '';
     const keys = safeGetKeys();
 
