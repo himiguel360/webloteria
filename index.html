@@ -4685,6 +4685,7 @@ let startTime = 0;
 let speedTimer = null;
 let lastCount = 0n;
 let lastStatsKey = 0;
+let _speedAvg = [];
 let WORKER_URL = null;
 let rangeStart = 0n;
 let rangeEnd = 0n;
@@ -6512,6 +6513,7 @@ async function start() {
 
     lastCount = 0n;
     lastStatsKey = 0;
+    _speedAvg = [];
     speedTimer = setInterval(updateStats, 1000);
     blockSaveTimer = setInterval(function() {
         if (currentBlockTracker && running) currentBlockTracker.save();
@@ -6661,12 +6663,12 @@ function updateStats() {
     if (speedKey !== lastStatsKey) {
         const delta = totalKeys - lastCount;
         const perSec = Number(delta) / ((speedKey - lastStatsKey) || 1);
-        if (!_speedAvg) _speedAvg = [];
         _speedAvg.push(perSec);
         if (_speedAvg.length > 5) _speedAvg.shift();
         var smoothed = 0;
         for (var si = 0; si < _speedAvg.length; si++) smoothed += _speedAvg[si];
         smoothed = smoothed / _speedAvg.length;
+        if (!isFinite(smoothed) || smoothed < 0) smoothed = 0;
         var speedEl = document.getElementById('speed');
         if (speedEl) speedEl.textContent = Math.round(smoothed).toLocaleString();
         lastCount = totalKeys;
