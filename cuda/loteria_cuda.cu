@@ -312,10 +312,8 @@ __host__ __device__ AffPoint to_affine(const JacPoint& p) {
     return a;
 }
 
-/* k*G — double-and-add, MSB first */
+/* k*G — double-and-add, MSB first, skip leading zeros */
 __host__ __device__ JacPoint scalar_mul_g(const uint256_t& k) {
-    JacPoint r;
-    bool init = true;
     uint256_t gx;
     gx.d[0]=0x16F81798; gx.d[1]=0x59F2815B; gx.d[2]=0x2DCE28D9; gx.d[3]=0x029BFCDB;
     gx.d[4]=0xCE870B07; gx.d[5]=0x55A06295; gx.d[6]=0x5DCBBAC5; gx.d[7]=0x79BE667E;
@@ -323,12 +321,17 @@ __host__ __device__ JacPoint scalar_mul_g(const uint256_t& k) {
     gy.d[0]=0xFB10D4B8; gy.d[1]=0x9C47D08F; gy.d[2]=0xA6855419; gy.d[3]=0xFD17B448;
     gy.d[4]=0x0E1108A8; gy.d[5]=0x5DA4FBFC; gy.d[6]=0x26A3C465; gy.d[7]=0x483ADA77;
 
+    int msb = -1;
     for (int i=255; i>=0; i--) {
-        if (!init) r = pt_double(r);
-        if (k.getBit(i)) {
-            if (init) { r.x=gx; r.y=gy; r.z=uint256_t(1); init=false; }
-            else r = pt_add_mixed(r, gx, gy);
-        }
+        if (k.getBit(i)) { msb = i; break; }
+    }
+    if (msb < 0) { JacPoint inf; return inf; }
+
+    JacPoint r;
+    r.x=gx; r.y=gy; r.z=uint256_t(1);
+    for (int i=msb-1; i>=0; i--) {
+        r = pt_double(r);
+        if (k.getBit(i)) r = pt_add_mixed(r, gx, gy);
     }
     return r;
 }
