@@ -4458,7 +4458,8 @@ async function initGPU(sharedModule) {
             }
         }
         device = await adapter.requestDevice({});
-        device.lost.then(function(info) { console.warn('[WebGPU] Device lost:', info.message); if (gpuRunning) recoverGPU(); });
+        device.lost.then(function(info) { console.warn('[WebGPU] Device lost:', info.message); gpuRunning = false; gpuSearchActive = false; if (running) { logWarn('GPU perdida: ' + info.message + ' — continuando com CPU.'); } });
+        device.addEventListener('uncapturederror', function(e) { console.warn('[WebGPU] Uncaptured error:', e.error.message); });
         restoreCalibration();
         if (sharedModule) initWasmPrecompute(sharedModule);
         console.log('[WebGPU] Detected:', vendor, '| WG:', WORKGROUP_SIZE, '| Batch:', BATCH_SIZE_INNER, '| MaxWG:', maxWorkgroups, '| Keys/dispatch:', keysPerDispatch, '| Vendor:', adapterInfo.vendor, '| Arch:', adapterInfo.architecture);
@@ -4548,6 +4549,7 @@ async function searchLoopGPU(targetHash160, startKey, endKey, onProgress, onFoun
     }
     while (gpuRunning && currentKey < endKey) {
         if (gpuAbort.signal.aborted) break;
+        try {
         var si = dispatchCount % PIPE_DEPTH;
         if (slotKey[si] !== null) { await drainSlot(si); }
         var t0 = performance.now();
@@ -4563,6 +4565,12 @@ async function searchLoopGPU(targetHash160, startKey, endKey, onProgress, onFoun
         }
         if (onProgress) { onProgress({ count: Number(keysCovered), totalChecked: totalChecked, gpuDispatches: dispatchCount, elapsed: t1 - t0 }); }
         var np = partition(keysPerDispatch); keysCovered = BigInt(np.workgroups * WORKGROUP_SIZE * np.keysPerThread);
+        } catch (e) {
+            console.warn('[WebGPU] dispatch error:', e);
+            recoverGPU();
+            await new Promise(function(r) { setTimeout(r, 100); });
+            if (keysPerDispatch <= WORKGROUP_SIZE * BATCH_SIZE_INNER) { gpuRunning = false; break; }
+        }
     }
     for (var fi = 0; fi < PIPE_DEPTH; fi++) { if (slotKey[fi] !== null) { await drainSlot(fi); } }
     gpuRunning = false; return { totalChecked: totalChecked, dispatchCount: dispatchCount };
@@ -6467,6 +6475,23 @@ async function start() {
             }).catch(function(e) {
                 gpuSearchActive = false;
                 logErr('GPU search erro: ' + e.message);
+                if (running && gpuAvailable) {
+                    log('Tentando recuperar GPU em 2s...');
+                    setTimeout(function() {
+                        if (!running) return;
+                        try { WebGPU_Turbo.recover(); } catch(ce) {}
+                        gpuSearchActive = true;
+                        WebGPU_Turbo.searchLoop(targetHash160, effectiveStart, rangeEnd, function onGpuProgress(p) {
+                            if (!running) return;
+                            totalKeys += BigInt(p.count);
+                        }, function onGpuFound(keyHex) {
+                            if (running) handleFound(keyHex);
+                        }).catch(function(e2) {
+                            gpuSearchActive = false;
+                            logErr('GPU recovery falhou: ' + e2.message + ' — continuando com CPU.');
+                        });
+                    }, 2000);
+                }
             });
         }
     }
