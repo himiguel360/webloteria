@@ -6397,8 +6397,6 @@ async function start() {
                     if (pctDone > 100) pctDone = 100;
                     var bar = document.getElementById('progress-fill');
                     if (bar) bar.style.width = pctDone + '%';
-                    var lbl = document.getElementById('progress-label');
-                    if (lbl) lbl.textContent = pctDone.toFixed(2) + '%';
                     var pctSpan = document.getElementById('progress-pct');
                     if (pctSpan) pctSpan.textContent = pctDone.toFixed(2) + '%';
                 },
