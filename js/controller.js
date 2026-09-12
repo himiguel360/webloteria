@@ -114,8 +114,8 @@ export default class extends Controller {
 
     wl.stopAll = () => this.stop()
     wl.start = () => this.start()
-    wl.handleFound = (k) => this.handleFound(k)
-    wl.getWorkerUrl = () => `../js/worker.js${this.assetQuery}`
+    wl.handleFound = (k) => this.onFound(k)
+    wl.getWorkerUrl = () => `js/worker.js${this.assetQuery}`
     wl.repositionSearch = (pct) => this._repositionSearch(pct)
 
     // Expose console elements
@@ -377,10 +377,18 @@ export default class extends Controller {
     }
 
     const workerCount = this.selectedWorkerCount()
+    const mode = window._wl?.searchMode || 'random'
 
-    this._tryStartWebGPU(targetHash160, this.startBigKey)
-
-    this.spawnWorkers(workerCount)
+    // Hybrid: GPU + CPU simultaneously
+    // Random/Sequential: CPU only (GPU only as boost if hardware available)
+    if (mode === 'hybrid') {
+      this._tryStartWebGPU(targetHash160, this.startBigKey)
+      this.spawnWorkers(workerCount)
+      this.log("info", "Modo H\u00edbrido: GPU + " + workerCount + " CPU workers")
+    } else {
+      this.spawnWorkers(workerCount)
+      this._tryStartWebGPU(targetHash160, this.startBigKey)
+    }
     this.startStatsTimer()
     this.startBlockSaveTimer()
 
@@ -496,7 +504,7 @@ export default class extends Controller {
     for (let i = 0; i < count; i++) {
       let worker
       try {
-        worker = new Worker(`../js/worker.js${this.assetQuery}`, { type: "module" })
+        worker = new Worker(`js/worker.js${this.assetQuery}`)
       } catch (e) {
         this.log("warn", this.t("log.workers_unavailable", { message: e.message }))
         this.teardownWorkers()

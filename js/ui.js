@@ -821,9 +821,9 @@ function initSliderListeners() {
     }
 
     var hints = {
-        'random': 'Chaves completamente aleat\u00f3rias (mais lento)',
+        'random': 'Chaves completamente aleat\u00f3rias (multi-lane)',
         'sequential': 'Caminhada sequencial do in\u00edcio ao fim',
-        'hybrid': 'Base aleat\u00f3ria + caminhada sequencial (recomendado)'
+        'hybrid': 'GPU + CPU simultaneamente (mais r\u00e1pido)'
     };
 
     document.querySelectorAll('.wl-mode-btn:not(.gpu-count-btn)').forEach(function(btn) {
