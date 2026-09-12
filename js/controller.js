@@ -94,6 +94,9 @@ export default class extends Controller {
     // Init GPU manager
     this._initGPUManager()
 
+    // Init UI modules (progress bar, percentage slider, random jump, auto-scan)
+    this._initUIModules()
+
     // Restore theme
     this._restoreTheme()
 
@@ -144,6 +147,15 @@ export default class extends Controller {
       const saved = localStorage.getItem('webloteria.theme')
       if (saved) document.documentElement.setAttribute('data-theme', saved)
     } catch (e) {}
+  }
+
+  _initUIModules() {
+    try {
+      if (typeof initProgressBar === 'function') initProgressBar()
+    } catch (e) { console.warn('initProgressBar failed:', e) }
+    try {
+      if (typeof initSliderListeners === 'function') initSliderListeners()
+    } catch (e) { console.warn('initSliderListeners failed:', e) }
   }
 
   toggleTheme() {

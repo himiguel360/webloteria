@@ -60,3 +60,40 @@ window.start = function() { if (window._wl.start) window._wl.start(); };
 window.handleFound = function(k) { if (window._wl.handleFound) window._wl.handleFound(k); };
 window.repositionSearch = function(p) { if (window._wl.repositionSearch) window._wl.repositionSearch(p); };
 window.getWorkerUrl = function() { return window._wl.getWorkerUrl ? window._wl.getWorkerUrl() : null; };
+
+// Proxy properties so ui.js bare globals stay in sync with _wl
+Object.defineProperty(window, 'running', {
+  get: function() { return window._wl.running; },
+  set: function(v) { window._wl.running = v; },
+  enumerable: true
+});
+Object.defineProperty(window, 'currentWallet', {
+  get: function() { return window._wl.currentWallet; },
+  set: function(v) { window._wl.currentWallet = v; },
+  enumerable: true
+});
+Object.defineProperty(window, 'currentSel', {
+  get: function() { return window._wl.currentSel; },
+  set: function(v) { window._wl.currentSel = v; },
+  enumerable: true
+});
+Object.defineProperty(window, 'rangeStart', {
+  get: function() { return window._wl.rangeStart; },
+  set: function(v) { window._wl.rangeStart = v; },
+  enumerable: true
+});
+Object.defineProperty(window, 'rangeEnd', {
+  get: function() { return window._wl.rangeEnd; },
+  set: function(v) { window._wl.rangeEnd = v; },
+  enumerable: true
+});
+Object.defineProperty(window, 'startPct', {
+  get: function() { return window._wl.startPct; },
+  set: function(v) { window._wl.startPct = v; },
+  enumerable: true
+});
+Object.defineProperty(window, '_smallRange', {
+  get: function() { return window._wl._smallRange || false; },
+  set: function(v) { window._wl._smallRange = v; },
+  enumerable: true
+});

@@ -156,6 +156,7 @@
 
           <!-- Progress bar -->
           <div class="wl-progress" id="progress-section">
+            <div class="wl-progress__markers" id="progress-markers"></div>
             <div class="wl-progress__track" id="progress-track">
               <div class="wl-progress__fill" id="progress-fill"></div>
               <div class="wl-progress__thumb" id="progress-thumb"></div>
@@ -163,6 +164,64 @@
             <div class="wl-progress__info">
               <span class="wl-progress__pct" id="progress-pct">0%</span>
               <span class="wl-progress__range mono" id="progress-range"></span>
+            </div>
+            <div class="wl-progress__legend" id="progress-legend"></div>
+          </div>
+
+          <!-- Percentage slider -->
+          <div class="wl-pct-section panel" id="pct-section">
+            <div class="panel__header">
+              <h2 class="panel__title" data-i18n="config.percentage">Percentual da faixa</h2>
+            </div>
+            <div class="panel__body">
+              <div class="wl-pct-slider">
+                <input type="range" id="pct-slider" class="wl-pct-slider__range" min="0" max="100" step="0.0001" value="0">
+                <span class="wl-pct-slider__val" id="pct-val">0%</span>
+              </div>
+              <div class="wl-pct-input-row">
+                <label class="label" for="pct-input">Posicao exata (%)</label>
+                <input type="text" id="pct-input" class="input mono" placeholder="0.000000" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="wl-pct-hex" id="pct-hex"></div>
+              <div class="wl-pct-verify" id="pct-verify"></div>
+              <div class="wl-pct-actions">
+                <button class="btn btn--primary btn--sm" id="search-from-here" data-i18n="config.search_from_here">Buscar a partir daqui</button>
+              </div>
+              <!-- Hex key verify -->
+              <div class="wl-pct-hex-verify">
+                <label class="label" for="hex-key-input">Verificar chave hex</label>
+                <div class="wl-pct-hex-verify__row">
+                  <input type="text" id="hex-key-input" class="input mono" placeholder="Chave hex (64 chars)" maxlength="64" autocomplete="off" spellcheck="false">
+                  <button class="btn btn--ghost btn--sm" id="hex-key-verify" data-i18n="config.verify">Verificar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Random jump -->
+          <div class="wl-random-section">
+            <button class="btn btn--accent btn--sm" id="random-jump-btn">&#x1F3B2 Auto-random (60s)</button>
+          </div>
+
+          <!-- Auto-scan -->
+          <div class="wl-auto-scan panel">
+            <div class="panel__header">
+              <h2 class="panel__title" data-i18n="config.auto_scan">Auto-scan</h2>
+            </div>
+            <div class="panel__body">
+              <div class="wl-auto-scan__row">
+                <button class="btn btn--primary btn--sm" id="auto-scan-btn">&#x25B6 Scan</button>
+                <button class="btn btn--ghost btn--sm" id="auto-scan-random">&#x1F3B2 Random</button>
+                <div class="wl-auto-scan__speed">
+                  <label class="label" for="auto-scan-speed">Velocidade</label>
+                  <select id="auto-scan-speed" class="input wl-select__control">
+                    <option value="10">10 ms</option>
+                    <option value="50">50 ms</option>
+                    <option value="100" selected>100 ms</option>
+                    <option value="500">500 ms</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -208,6 +267,20 @@
 
   <!-- Confetti container -->
   <div class="wl-confetti-container" id="confetti-container"></div>
+
+  <!-- Found panel (floating) -->
+  <div class="wl-found-panel hidden" id="found-panel">
+    <div class="wl-found-panel__header">
+      <span class="wl-found-panel__title">&#x2705 Chave Encontrada!</span>
+      <button class="wl-found-panel__close" id="found-panel-close" aria-label="Fechar">&#x2715;</button>
+    </div>
+    <div class="wl-found-panel__key" id="found-panel-key"></div>
+    <div class="wl-found-panel__addr" id="found-panel-addr"></div>
+    <div class="wl-found-panel__actions">
+      <button class="btn btn--ghost btn--sm" id="found-panel-copy">&#x1F4CB Copiar chave</button>
+      <button class="btn btn--primary btn--sm" id="found-panel-save">&#x1F4BE Salvar localmente</button>
+    </div>
+  </div>
 
   <!-- Locale links footer -->
   <footer class="wl-locales">
