@@ -133,7 +133,7 @@ export default class extends Controller {
       const label = GPUManager.getLabel()
       const desc = GPUManager.getDesc()
       this.setWasmStatus('ready', `${label}: ${desc}`)
-      window.gpuAvailable = GPUManager.getBackend() === 'webgpu'
+      window.gpuAvailable = !!navigator.gpu
       if (window._wl) window._wl._gpuBackend = GPUManager.getBackend()
       this.log('info', `GPU backend: ${label} (${desc})`)
     } else {
@@ -900,14 +900,12 @@ export default class extends Controller {
     if (!this.running) return
     if (this.smallRange) return
 
-    // Check if WebGPU is available via GPUManager or legacy WebGPU_Turbo
-    const hasWebGPU = (window.GPUManager && GPUManager.getBackend() === 'webgpu') ||
-                      (typeof window.WebGPU_Turbo !== 'undefined' && window.gpuAvailable)
-    if (!hasWebGPU) return
-
-    const self = this
     const gpu = window.WebGPU_Turbo
     if (!gpu) return
+
+    if (!navigator.gpu) return
+
+    const self = this
 
     // Ensure WebGPU_Turbo has its own device+pipeline initialized
     async function _startGPU() {
@@ -946,7 +944,7 @@ export default class extends Controller {
       }).catch(function (e) {
         self.gpuSearchActive = false
         self.log("warn", "GPU search erro: " + e.message)
-        if (self.running && window.gpuAvailable) {
+        if (self.running && navigator.gpu) {
           self.log("info", "Tentando recuperar GPU em 2s...")
           setTimeout(function () {
             if (!self.running) return

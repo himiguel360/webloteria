@@ -538,7 +538,7 @@ const WebGPU_Turbo = (() => {
                     const off = 4 + i * 8;
                     const threadId = d.getUint32(off, true);
                     const keyOffset = d.getUint32(off + 4, true);
-                    const hitKey = lastKey + BigInt(threadId) * BigInt(BATCH_SIZE) + BigInt(keyOffset);
+                    const hitKey = lastKey + BigInt(keyOffset);
                     if (hitKey >= startKey && hitKey <= endKey) {
                         const keyHex = hitKey.toString(16).padStart(64, '0');
                         if (onFound) onFound(keyHex);
