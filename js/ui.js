@@ -570,7 +570,13 @@ function initSliderListeners() {
             var pctEl = document.getElementById('pct-input');
             var pct = pctEl ? parseFloat(pctEl.value) : 0;
             if (isNaN(pct) || pct < 0) pct = 0;
+            if (pct > 100) pct = 100;
             startPct = pct;
+            var key = pctToKey(String(pct));
+            if (key !== null) {
+                var startKeyInput = document.getElementById('startKey');
+                if (startKeyInput) startKeyInput.value = key.toString(16).padStart(64, '0');
+            }
             setTimeout(function() { start(); }, 100);
         });
     }

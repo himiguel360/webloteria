@@ -351,8 +351,10 @@ export default class extends Controller {
     this.targetHash160 = targetHash160
 
     this._currentPuzzleId = this._detectPuzzleId(target)
-    const endKey = this._computeEndKey()
-    this._currentWallet = { address: target, range: [this.startBigKey, endKey] }
+    const puzzleRangeEnd = this._currentPuzzleId > 0
+      ? (1n << BigInt(this._currentPuzzleId)) - 1n
+      : this.startBigKey + BLOCK_SIZE * 100n
+    this._currentWallet = { address: target, range: [this.startBigKey, puzzleRangeEnd] }
 
     // Update bridge globals for ui.js/sync.js
     if (window._wl) {
@@ -360,7 +362,7 @@ export default class extends Controller {
       window._wl.currentWallet = this._currentWallet
       window._wl.currentSel = this._currentPuzzleId
       window._wl.rangeStart = this.startBigKey
-      window._wl.rangeEnd = endKey
+      window._wl.rangeEnd = puzzleRangeEnd
     }
 
     this.blockTracker = new window.BlockTracker(
@@ -368,6 +370,7 @@ export default class extends Controller {
       this.startBigKey,
       this.startBigKey + BLOCK_SIZE * 100n
     )
+    this.blockTracker.reset()
 
     this.log("info", this.t("log.started", { key: keyHex }))
     this.log("info", this.t("log.target", { address: target }))
@@ -475,17 +478,10 @@ export default class extends Controller {
     }
 
     if (this.blockTracker) {
-      if (this.smallRange && this._currentWallet) {
-        this.blockTracker.markDone(
-          this._currentWallet.range?.[0] ?? this.startBigKey,
-          this._currentWallet.range?.[1] ?? this.startBigKey + BLOCK_SIZE * 100n
-        )
-      }
       try { this.blockTracker.save() } catch {}
       this.log("info", "Progresso salvo: " + this.blockTracker.getPctDone().toFixed(4) + "% do intervalo verificado.")
     }
 
-    this.smallRange = false
     this.setControlsRunning(false)
     this.workerCountChanged()
 
@@ -523,22 +519,49 @@ export default class extends Controller {
 
   addWorker(worker) {
     worker.onmessage = ({ data }) => this.handleWorkerMessage(worker, data)
-    const searchMode = window._wl?.searchMode || 'random'
-    worker.postMessage({
-      type: "start",
-      targetHash160: this.targetHash160,
-      targetAddress: this.targetAddress,
-      startKey: this.nextKey.toString(16),
-      endKey: this._computeEndKey().toString(16),
-      batchSize: this.batchSize,
-      workerIndex: this.workers.length,
-      lanes: 4,
-      windowKeys: 262144,
-      searchMode: searchMode,
-      pipeB: 2048,
-      blockKeys: String(this.batchSize)
-    })
+    const idx = this.workers.length
     this.workers.push(worker)
+
+    if (this.blockTracker) {
+      const block = this.blockTracker.claimBlock(BLOCK_SIZE)
+      if (!block) { this.finishAllDone(); return }
+      this.workerBlocks[idx] = block
+      const blockKeyCount = block.end - block.start + 1n
+      const searchMode = window._wl?.searchMode || 'random'
+      worker.postMessage({
+        type: "start",
+        targetHash160: this.targetHash160,
+        targetAddress: this.targetAddress,
+        startKey: block.start.toString(16).padStart(64, "0"),
+        endKey: block.end.toString(16).padStart(64, "0"),
+        batchSize: this.batchSize,
+        workerIndex: idx,
+        lanes: 4,
+        windowKeys: 262144,
+        searchMode: searchMode,
+        pipeB: 2048,
+        blockKeys: blockKeyCount.toString()
+      })
+      this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
+    } else {
+      const count = this.batchSize
+      const searchMode = window._wl?.searchMode || 'random'
+      worker.postMessage({
+        type: "start",
+        targetHash160: this.targetHash160,
+        targetAddress: this.targetAddress,
+        startKey: this.nextKey.toString(16).padStart(64, "0"),
+        endKey: (this.nextKey + BigInt(count) - 1n).toString(16).padStart(64, "0"),
+        batchSize: count,
+        workerIndex: idx,
+        lanes: 4,
+        windowKeys: 262144,
+        searchMode: searchMode,
+        pipeB: 2048,
+        blockKeys: String(count)
+      })
+      this.nextKey += BigInt(count)
+    }
   }
 
   _computeEndKey() {
@@ -623,6 +646,13 @@ export default class extends Controller {
         this.totalKeys += BigInt(data.count || 0)
         if (data.elapsed) {
           this.tuneBatchSize(data.count, data.elapsed)
+        }
+        if (this.blockTracker) {
+          const idx = this.workers.indexOf(worker)
+          const block = this.workerBlocks[idx]
+          if (block) {
+            this.blockTracker.markDone(block.start, block.end)
+          }
         }
         this.assignRange(worker)
         break
@@ -990,11 +1020,16 @@ export default class extends Controller {
     if (!this.running) return
     const endKey = this._computeEndKey()
     const range = endKey - this.startBigKey
-    const offset = range * BigInt(Math.floor(pct * 100)) / 100n
-    this.nextKey = this.startBigKey + offset
+    const pctScaled = BigInt(Math.floor(pct * 1e8))
+    const offset = range * pctScaled / (100n * 100000000n)
+    const newKey = this.startBigKey + offset
+    this.nextKey = newKey
+    if (this.blockTracker) {
+      this.blockTracker.trimFrom(newKey)
+    }
     this.teardownWorkers()
     const workerCount = this.selectedWorkerCount()
     this.spawnWorkers(workerCount)
-    this.log('info', 'Reposicionado para ' + Math.floor(pct * 100) + '% do intervalo')
+    this.log('info', 'Reposicionado para ' + pct.toFixed(4) + '% do intervalo')
   }
 }
