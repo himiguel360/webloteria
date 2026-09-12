@@ -1018,14 +1018,16 @@ export default class extends Controller {
 
   _repositionSearch(pct) {
     if (!this.running) return
-    const endKey = this._computeEndKey()
-    const range = endKey - this.startBigKey
+    const bt = this.blockTracker
+    const rangeStart = bt ? bt.rangeStart : this.startBigKey
+    const rangeEnd = bt ? bt.rangeEnd : this.startBigKey + BLOCK_SIZE * 100n
+    const range = rangeEnd - rangeStart
     const pctScaled = BigInt(Math.floor(pct * 1e8))
     const offset = range * pctScaled / (100n * 100000000n)
-    const newKey = this.startBigKey + offset
+    const newKey = rangeStart + offset
     this.nextKey = newKey
-    if (this.blockTracker) {
-      this.blockTracker.trimFrom(newKey)
+    if (bt) {
+      bt.trimFrom(newKey)
     }
     this.teardownWorkers()
     const workerCount = this.selectedWorkerCount()
