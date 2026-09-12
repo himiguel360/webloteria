@@ -615,14 +615,14 @@ export default class extends Controller {
         this.assignRange(worker)
         break
 
+      case "found":
+        if (data.key) this.onFound(data.key)
+        return
+
       case "done":
         this.totalKeys += BigInt(data.count || 0)
         if (data.elapsed) {
           this.tuneBatchSize(data.count, data.elapsed)
-        }
-        if (data.found) {
-          this.onFound(data.found)
-          return
         }
         this.assignRange(worker)
         break
