@@ -1,0 +1,66 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "Перебор биткоин-адресов, скомпилированный в WebAssembly и работающий на ядрах вашего собственного браузера.",
+  "meta_description": "Ищите приватный ключ биткоин-адреса прямо в браузере: WebAssembly работает на нескольких ядрах, и ничего не покидает вашу машину.",
+  "status": {
+    "loading": "Загрузка WebAssembly",
+    "ready": "Готово — %{cores}",
+    "running": "Поиск на %{cores}",
+    "error": "Не удалось загрузить WebAssembly"
+  },
+  "cores": {
+    "one": "%{count} ядре",
+    "few": "%{count} ядрах",
+    "many": "%{count} ядрах",
+    "other": "%{count} ядрах"
+  },
+  "config": {
+    "heading": "Настройка",
+    "presets_label": "Загрузить задачу",
+    "presets_hint": "Все 160 кошельков головоломки на 1000 BTC. У решённых ключ уже опубликован — только на них поиск может завершиться.",
+    "presets_filter_label": "Фильтр задач",
+    "presets_all": "Все",
+    "presets_open": "Открытые",
+    "presets_solved": "Решённые",
+    "preset_title": "Загрузить задачу %{number} — ещё не забраны %{prize} BTC",
+    "preset_title_solved": "Загрузить задачу %{number} — уже решена, годится для проверки",
+    "start_key": "Начальный приватный ключ",
+    "start_key_hint": "Шестнадцатеричный, до 64 символов.",
+    "target_address": "Целевой биткоин-адрес",
+    "workers": "Ядра для поиска",
+    "start": "Начать поиск",
+    "stop": "Остановить"
+  },
+  "stats": {
+    "speed": "Скорость",
+    "speed_unit": "ключей/с",
+    "total": "Всего проверено",
+    "current_key": "Текущий ключ"
+  },
+  "console": {
+    "heading": "Консоль",
+    "clear": "Очистить",
+    "empty": "Поиск ещё не начинался."
+  },
+  "log": {
+    "preset_loaded": "Задача %{puzzle} загружена. Начальный ключ выбран случайно внутри её диапазона.",
+    "preset_loaded_solved": "Задача %{puzzle} загружена. Она уже решена, поэтому поиск начинается с начала диапазона, откуда известный ключ достижим.",
+    "invalid_key": "Неверный приватный ключ. Используйте шестнадцатеричный формат, до 64 символов.",
+    "invalid_address": "Неверный биткоин-адрес.",
+    "started": "Поиск начат с %{key}",
+    "target": "Цель: %{address}",
+    "searching": "Поиск на %{cores}.",
+    "stopped": "Поиск остановлен вами.",
+    "workers_unavailable": "Web Workers недоступны (%{message}). Поиск в главном потоке.",
+    "worker_error": "Ошибка на одном из ядер поиска: %{message}",
+    "wasm_error": "Ошибка WebAssembly: %{message}",
+    "wasm_load_failed": "Не удалось загрузить WebAssembly: %{message}",
+    "key_rejected": "Ключ отклонён при проверке: %{key}",
+    "key_found": "Ключ найден: %{key}"
+  },
+  "found": {
+    "heading": "Ключ найден",
+    "private_key": "Приватный ключ",
+    "address": "Адрес"
+  }
+}

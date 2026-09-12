@@ -1,0 +1,63 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "ビットコインアドレスの総当たり探索を WebAssembly にコンパイルし、あなたのブラウザのコアで実行します。",
+  "meta_description": "ビットコインアドレスの秘密鍵をブラウザ上で直接探索します。WebAssembly が複数のコアで動作し、データが端末の外に出ることはありません。",
+  "status": {
+    "loading": "WebAssembly を読み込み中",
+    "ready": "準備完了 — %{cores}",
+    "running": "%{cores}で探索中",
+    "error": "WebAssembly の読み込みに失敗しました"
+  },
+  "cores": {
+    "other": "%{count}コア"
+  },
+  "config": {
+    "heading": "設定",
+    "presets_label": "課題を読み込む",
+    "presets_hint": "1000 BTC パズルの160個のウォレットすべて。解決済みのものは鍵が公開されていて、探索が終わりまで届く唯一の課題です。",
+    "presets_filter_label": "課題を絞り込む",
+    "presets_all": "すべて",
+    "presets_open": "未解決",
+    "presets_solved": "解決済み",
+    "preset_title": "課題 %{number} を読み込む — 未解決の %{prize} BTC",
+    "preset_title_solved": "課題 %{number} を読み込む — 解決済み、動作確認向き",
+    "start_key": "開始する秘密鍵",
+    "start_key_hint": "16進数、最大64文字。",
+    "target_address": "対象のビットコインアドレス",
+    "workers": "探索に使うコア数",
+    "start": "探索を開始",
+    "stop": "停止"
+  },
+  "stats": {
+    "speed": "速度",
+    "speed_unit": "鍵/秒",
+    "total": "検査した総数",
+    "current_key": "現在の鍵"
+  },
+  "console": {
+    "heading": "コンソール",
+    "clear": "クリア",
+    "empty": "探索はまだ開始されていません。"
+  },
+  "log": {
+    "preset_loaded": "課題 %{puzzle} を読み込みました。開始鍵はその範囲内からランダムに選ばれています。",
+    "preset_loaded_solved": "課題 %{puzzle} を読み込みました。すでに解決済みなので、既知の鍵に届くよう範囲の先頭から探索します。",
+    "invalid_key": "秘密鍵が不正です。16進数で64文字以内で入力してください。",
+    "invalid_address": "ビットコインアドレスが不正です。",
+    "started": "%{key} から探索を開始しました",
+    "target": "対象: %{address}",
+    "searching": "%{cores}で探索しています。",
+    "stopped": "探索を停止しました。",
+    "workers_unavailable": "Web Worker を利用できません (%{message})。メインスレッドで探索します。",
+    "worker_error": "探索コアでエラーが発生しました: %{message}",
+    "wasm_error": "WebAssembly のエラー: %{message}",
+    "wasm_load_failed": "WebAssembly の読み込みに失敗しました: %{message}",
+    "key_rejected": "検証で鍵が拒否されました: %{key}",
+    "key_found": "鍵が見つかりました: %{key}"
+  },
+  "found": {
+    "heading": "鍵が見つかりました",
+    "private_key": "秘密鍵",
+    "address": "アドレス"
+  }
+}

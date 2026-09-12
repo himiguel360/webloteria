@@ -1,0 +1,64 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "Búsqueda de direcciones Bitcoin por fuerza bruta, compilada para WebAssembly y ejecutada en los núcleos de su propio navegador.",
+  "meta_description": "Busque la clave privada de una dirección Bitcoin directamente en el navegador, con WebAssembly ejecutándose en varios núcleos. Nada sale de su máquina.",
+  "status": {
+    "loading": "Cargando WebAssembly",
+    "ready": "Listo — %{cores}",
+    "running": "Buscando en %{cores}",
+    "error": "Error al cargar WebAssembly"
+  },
+  "cores": {
+    "one": "%{count} núcleo",
+    "other": "%{count} núcleos"
+  },
+  "config": {
+    "heading": "Configuración",
+    "presets_label": "Cargar desafío",
+    "presets_hint": "Las 160 carteras del desafío de 1000 BTC. Las resueltas ya tuvieron la clave publicada y son las únicas en las que la búsqueda puede terminar.",
+    "presets_filter_label": "Filtrar desafíos",
+    "presets_all": "Todos",
+    "presets_open": "Abiertos",
+    "presets_solved": "Resueltos",
+    "preset_title": "Cargar el desafío %{number} — %{prize} BTC abiertos",
+    "preset_title_solved": "Cargar el desafío %{number} — ya resuelto, sirve de prueba",
+    "start_key": "Clave privada inicial",
+    "start_key_hint": "Hexadecimal, hasta 64 caracteres.",
+    "target_address": "Dirección Bitcoin objetivo",
+    "workers": "Núcleos de búsqueda",
+    "start": "Iniciar búsqueda",
+    "stop": "Detener"
+  },
+  "stats": {
+    "speed": "Velocidad",
+    "speed_unit": "claves/s",
+    "total": "Total verificado",
+    "current_key": "Clave actual"
+  },
+  "console": {
+    "heading": "Consola",
+    "clear": "Limpiar",
+    "empty": "La búsqueda aún no ha comenzado."
+  },
+  "log": {
+    "preset_loaded": "Desafío %{puzzle} cargado. Clave inicial sorteada dentro del rango.",
+    "preset_loaded_solved": "Desafío %{puzzle} cargado. Ya fue resuelto, por lo que la búsqueda comienza al inicio del rango, desde donde la clave conocida es alcanzable.",
+    "invalid_key": "Clave privada inválida. Use hexadecimal con hasta 64 caracteres.",
+    "invalid_address": "Dirección Bitcoin inválida.",
+    "started": "Búsqueda iniciada desde %{key}",
+    "target": "Objetivo: %{address}",
+    "searching": "Buscando en %{cores}.",
+    "stopped": "Búsqueda interrumpida por usted.",
+    "workers_unavailable": "Web Workers no disponibles (%{message}). Buscando en el hilo principal.",
+    "worker_error": "Error en un núcleo de búsqueda: %{message}",
+    "wasm_error": "Error en WebAssembly: %{message}",
+    "wasm_load_failed": "Error al cargar WebAssembly: %{message}",
+    "key_rejected": "Clave rechazada en la verificación: %{key}",
+    "key_found": "Clave encontrada: %{key}"
+  },
+  "found": {
+    "heading": "Clave encontrada",
+    "private_key": "Clave privada",
+    "address": "Dirección"
+  }
+}

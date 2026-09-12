@@ -1,0 +1,89 @@
+/* ============================================================================
+   Weblotery Turbo v2 — animations
+   Micro-interactions, match celebration, transitions.
+   ========================================================================= */
+
+/* Fade + slide in (live keys, console entries) */
+@keyframes wl-fadeSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Overlay entrance */
+@keyframes wl-overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Card pop */
+@keyframes wl-cardPop {
+  0% { opacity: 0; transform: scale(0.85) translateY(20px); }
+  60% { transform: scale(1.02) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Check bounce */
+@keyframes wl-checkBounce {
+  0% { opacity: 0; transform: scale(0) rotate(-45deg); }
+  50% { transform: scale(1.2) rotate(0deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+/* Confetti particles */
+@keyframes wl-confettiFall {
+  0% { opacity: 1; transform: translateY(-100vh) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(100vh) rotate(720deg); }
+}
+
+@keyframes wl-confettiSway {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(15px); }
+  75% { transform: translateX(-15px); }
+}
+
+/* Shimmer effect for found key */
+@keyframes wl-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Glow pulse for match */
+@keyframes wl-glowPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(91, 196, 122, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(91, 196, 122, 0.6); }
+}
+
+/* Utility classes */
+.wl-animate-fadeIn {
+  animation: wl-fadeSlideIn var(--dur-2) var(--ease);
+}
+
+.wl-animate-pop {
+  animation: wl-cardPop 0.5s var(--ease-out);
+}
+
+.wl-animate-glow {
+  animation: wl-glowPulse 2s var(--ease) infinite;
+}
+
+/* Confetti container */
+.wl-confetti {
+  position: fixed; inset: 0; pointer-events: none; z-index: 10000;
+  overflow: hidden;
+}
+
+.wl-confetti__particle {
+  position: absolute; top: -10px;
+  width: 10px; height: 10px; border-radius: 2px;
+  animation: wl-confettiFall 3s linear forwards, wl-confettiSway 2s ease-in-out infinite;
+}
+
+/* Progress bar animation */
+.wl-progress__fill--animating {
+  transition: width 0.3s var(--ease-out);
+}
+
+/* Button press feedback */
+.btn--press-feedback:active {
+  transform: translateY(2px) scale(0.98);
+}

@@ -1,0 +1,64 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "Brute-force search for Bitcoin addresses, compiled to WebAssembly and run on your own browser's cores.",
+  "meta_description": "Search for the private key of a Bitcoin address straight in the browser, with WebAssembly running across multiple cores. Nothing leaves your machine.",
+  "status": {
+    "loading": "Loading WebAssembly",
+    "ready": "Ready — %{cores}",
+    "running": "Searching on %{cores}",
+    "error": "WebAssembly failed to load"
+  },
+  "cores": {
+    "one": "%{count} core",
+    "other": "%{count} cores"
+  },
+  "config": {
+    "heading": "Configuration",
+    "presets_label": "Load a challenge",
+    "presets_hint": "All 160 wallets of the 1000 BTC puzzle. The solved ones have had their key published, and are the only ones a search can finish on.",
+    "presets_filter_label": "Filter challenges",
+    "presets_all": "All",
+    "presets_open": "Open",
+    "presets_solved": "Solved",
+    "preset_title": "Load challenge %{number} — %{prize} BTC still open",
+    "preset_title_solved": "Load challenge %{number} — already solved, good for a test run",
+    "start_key": "Starting private key",
+    "start_key_hint": "Hexadecimal, up to 64 characters.",
+    "target_address": "Target Bitcoin address",
+    "workers": "Search cores",
+    "start": "Start search",
+    "stop": "Stop"
+  },
+  "stats": {
+    "speed": "Speed",
+    "speed_unit": "keys/s",
+    "total": "Total checked",
+    "current_key": "Current key"
+  },
+  "console": {
+    "heading": "Console",
+    "clear": "Clear",
+    "empty": "The search has not started yet."
+  },
+  "log": {
+    "preset_loaded": "Challenge %{puzzle} loaded. Starting key drawn at random within its range.",
+    "preset_loaded_solved": "Challenge %{puzzle} loaded. It is already solved, so the search starts at the bottom of the range, where the known key can be reached.",
+    "invalid_key": "Invalid private key. Use hexadecimal, up to 64 characters.",
+    "invalid_address": "Invalid Bitcoin address.",
+    "started": "Search started from %{key}",
+    "target": "Target: %{address}",
+    "searching": "Searching on %{cores}.",
+    "stopped": "Search stopped by you.",
+    "workers_unavailable": "Web Workers unavailable (%{message}). Searching on the main thread.",
+    "worker_error": "Error on a search core: %{message}",
+    "wasm_error": "WebAssembly error: %{message}",
+    "wasm_load_failed": "WebAssembly failed to load: %{message}",
+    "key_rejected": "Key rejected on verification: %{key}",
+    "key_found": "Key found: %{key}"
+  },
+  "found": {
+    "heading": "Key found",
+    "private_key": "Private key",
+    "address": "Address"
+  }
+}

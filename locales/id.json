@@ -1,0 +1,63 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "Pencarian alamat Bitcoin secara brute force, dikompilasi ke WebAssembly dan dijalankan di inti prosesor peramban Anda sendiri.",
+  "meta_description": "Cari kunci privat sebuah alamat Bitcoin langsung di peramban, dengan WebAssembly yang berjalan di banyak inti. Tidak ada data yang keluar dari mesin Anda.",
+  "status": {
+    "loading": "Memuat WebAssembly",
+    "ready": "Siap — %{cores}",
+    "running": "Mencari di %{cores}",
+    "error": "WebAssembly gagal dimuat"
+  },
+  "cores": {
+    "other": "%{count} inti"
+  },
+  "config": {
+    "heading": "Konfigurasi",
+    "presets_label": "Muat tantangan",
+    "presets_hint": "Seluruh 160 dompet teka-teki 1000 BTC. Yang sudah terpecahkan kuncinya telah dipublikasikan, dan hanya di situ pencarian bisa selesai.",
+    "presets_filter_label": "Saring tantangan",
+    "presets_all": "Semua",
+    "presets_open": "Terbuka",
+    "presets_solved": "Terpecahkan",
+    "preset_title": "Muat tantangan %{number} — %{prize} BTC masih terbuka",
+    "preset_title_solved": "Muat tantangan %{number} — sudah terpecahkan, cocok untuk uji coba",
+    "start_key": "Kunci privat awal",
+    "start_key_hint": "Heksadesimal, maksimal 64 karakter.",
+    "target_address": "Alamat Bitcoin sasaran",
+    "workers": "Inti pencarian",
+    "start": "Mulai pencarian",
+    "stop": "Berhenti"
+  },
+  "stats": {
+    "speed": "Kecepatan",
+    "speed_unit": "kunci/dtk",
+    "total": "Total diperiksa",
+    "current_key": "Kunci saat ini"
+  },
+  "console": {
+    "heading": "Konsol",
+    "clear": "Bersihkan",
+    "empty": "Pencarian belum dimulai."
+  },
+  "log": {
+    "preset_loaded": "Tantangan %{puzzle} dimuat. Kunci awal diacak di dalam rentangnya.",
+    "preset_loaded_solved": "Tantangan %{puzzle} dimuat. Sudah terpecahkan, jadi pencarian dimulai dari awal rentang, tempat kunci yang diketahui bisa dicapai.",
+    "invalid_key": "Kunci privat tidak valid. Gunakan heksadesimal, maksimal 64 karakter.",
+    "invalid_address": "Alamat Bitcoin tidak valid.",
+    "started": "Pencarian dimulai dari %{key}",
+    "target": "Sasaran: %{address}",
+    "searching": "Mencari di %{cores}.",
+    "stopped": "Pencarian dihentikan oleh Anda.",
+    "workers_unavailable": "Web Worker tidak tersedia (%{message}). Mencari di thread utama.",
+    "worker_error": "Kesalahan pada satu inti pencarian: %{message}",
+    "wasm_error": "Kesalahan WebAssembly: %{message}",
+    "wasm_load_failed": "WebAssembly gagal dimuat: %{message}",
+    "key_rejected": "Kunci ditolak saat verifikasi: %{key}",
+    "key_found": "Kunci ditemukan: %{key}"
+  },
+  "found": {
+    "heading": "Kunci ditemukan",
+    "private_key": "Kunci privat",
+    "address": "Alamat"
+  }
+}

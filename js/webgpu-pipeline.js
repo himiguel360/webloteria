@@ -1,6 +1,6 @@
-// WebGPU Turbo Pipeline — optimized for RTX 4090/5090
-// Double-buffered dispatch, WASM scalarMul precompute, auto-scaling workgroups
-// Eliminates elliptic.js bottleneck from hot loop
+// WebGPU Turbo Pipeline v2 — Universal browser support
+// Triple-buffered dispatch, WASM scalarMul precompute, auto-scaling workgroups
+// Compatibility mode for older GPUs, subgroups detection, adaptive workgroup sizing
 // Shaders embedded inline — no fetch() needed (COEP-safe)
 
 const WGSL_BIGINT = `// secp256k1 256-bit field arithmetic — 8x u32 little-endian limbs
@@ -91,7 +91,7 @@ const WebGPU_Turbo = (() => {
     let dispatchCount = 0;
 
     // Double-buffer: two complete sets of GPU buffers
-    let bufs = [{}, {}];
+    let bufs = [{}, {}, {}]; // v2: triple buffer for better latency hiding
     let bufIdx = 0;
 
     let WORKGROUP_SIZE = 64;
@@ -183,9 +183,16 @@ const WebGPU_Turbo = (() => {
     async function init(sharedModule) {
         if (!navigator.gpu) return false;
         try {
+            // Try core mode first, then compatibility mode for broader support
             adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
             if (!adapter) adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
             if (!adapter) adapter = await navigator.gpu.requestAdapter();
+            // Try compatibility mode for older GPUs (OpenGL ES 3.1 / DX11)
+            if (!adapter) {
+                try {
+                    adapter = await navigator.gpu.requestAdapter({ featureLevel: 'compatibility' });
+                } catch (e) {}
+            }
             if (!adapter) return false;
 
             adapterInfo = {};
@@ -201,6 +208,23 @@ const WebGPU_Turbo = (() => {
             gpuProfile = GPU_PROFILES[vendor] || GPU_PROFILES['default'];
             WORKGROUP_SIZE = gpuProfile.workgroupSize;
             BATCH_SIZE = gpuProfile.batchSize;
+
+            // Detect underlying graphics API
+            let api = 'unknown';
+            const desc = ((adapterInfo.description || '') + ' ' + (adapterInfo.architecture || '')).toLowerCase();
+            if (desc.includes('vulkan') || desc.includes('mesa') || desc.includes('radv') || desc.includes('swiftshader')) api = 'Vulkan';
+            else if (desc.includes('d3d') || desc.includes('direct') || desc.includes('dx12')) api = 'Direct3D 12';
+            else if (desc.includes('metal') || desc.includes('apple')) api = 'Metal';
+            else if (desc.includes('opengl') || desc.includes('angle')) api = 'OpenGL ES (via ANGLE)';
+            else {
+                const ua = navigator.userAgent.toLowerCase();
+                const pf = (navigator.platform || '').toLowerCase();
+                if (pf.includes('linux') || ua.includes('linux')) api = 'Vulkan (Mesa)';
+                else if (pf.includes('mac') || ua.includes('mac')) api = 'Metal';
+                else if (ua.includes('windows') || pf.includes('win')) api = 'Direct3D 12';
+                else if (ua.includes('android')) api = 'Vulkan';
+            }
+            adapterInfo.graphicsApi = api;
 
             // Scale max workgroups based on GPU limits
             if (adapter.limits && adapter.limits.maxComputeWorkgroupsPerDimension) {
@@ -228,9 +252,18 @@ const WebGPU_Turbo = (() => {
             // Init WASM precompute
             if (sharedModule) initWasmPrecompute(sharedModule);
 
-            console.log('[WebGPU] Detected:', vendor, '| WG:', WORKGROUP_SIZE, '| Batch:', BATCH_SIZE,
+            // Detect subgroups feature for potential optimizations
+            let hasSubgroups = false;
+            try {
+                if (adapter.features && typeof adapter.features.has === 'function') {
+                    hasSubgroups = adapter.features.has('subgroups');
+                }
+            } catch (e) {}
+
+            console.log('[WebGPU] Detected:', vendor, '| API:', api || 'unknown', '| WG:', WORKGROUP_SIZE, '| Batch:', BATCH_SIZE,
                 '| MaxWG:', maxWorkgroups, '| Keys/dispatch:', keysPerDispatch,
-                '| Vendor:', adapterInfo.vendor, '| Arch:', adapterInfo.architecture);
+                '| Vendor:', adapterInfo.vendor, '| Arch:', adapterInfo.architecture,
+                '| Subgroups:', hasSubgroups);
             return true;
         } catch (e) {
             console.warn('[WebGPU] Init failed:', e);
@@ -257,8 +290,8 @@ const WebGPU_Turbo = (() => {
                 compute: { module: shaderModule, entryPoint: 'search' }
             });
 
-            // Create double-buffer set
-            for (let i = 0; i < 2; i++) {
+            // Create triple-buffer set for latency hiding
+            for (let i = 0; i < 3; i++) {
                 bufs[i].params = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
                 bufs[i].output = device.createBuffer({ size: RESULTS_SIZE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
                 bufs[i].read = device.createBuffer({ size: RESULTS_SIZE, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
@@ -426,7 +459,7 @@ const WebGPU_Turbo = (() => {
             return submitDispatch(buf, baseX, baseY, targetWords);
         }
 
-        // Pipelined loop: submit N+1 while reading N
+        // Pipelined loop: submit N+1 while reading N-1 (triple buffer)
         var prevKeysCovered = 0n;
         var prevStartKey = 0n;
         while (gpuRunning && currentKey < endKey) {
@@ -451,7 +484,7 @@ const WebGPU_Turbo = (() => {
 
             // Read previous dispatch results while GPU works on current
             if (dispatchCount > 1) {
-                const prevBuf = bufs[1 - bufIdx];
+                const prevBuf = bufs[(bufIdx + 2) % 3]; // 2 back in triple buffer
                 prevHits = await readResults(prevBuf);
                 const elapsed = performance.now() - t0;
                 calibrate(elapsed);
@@ -482,8 +515,8 @@ const WebGPU_Turbo = (() => {
             prevKeysCovered = curKeysCovered;
             prevStartKey = curStartKey;
 
-            // Swap buffers
-            bufIdx = 1 - bufIdx;
+            // Swap buffers (triple buffer: 0→1→2→0)
+            bufIdx = (bufIdx + 1) % 3;
 
             // Recalculate keysCovered after calibration
             const np = partition(keysPerDispatch);
@@ -495,7 +528,7 @@ const WebGPU_Turbo = (() => {
 
         // Read final pending dispatch
         if (dispatchCount > 0) {
-            const finalBuf = bufs[1 - bufIdx];
+            const finalBuf = bufs[(bufIdx + 2) % 3];
             try {
                 await finalBuf.read.mapAsync(GPUMapMode.READ);
                 const d = new DataView(finalBuf.read.getMappedRange());
@@ -526,6 +559,9 @@ const WebGPU_Turbo = (() => {
         try {
             adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
             if (!adapter) adapter = await navigator.gpu.requestAdapter();
+            if (!adapter) {
+                try { adapter = await navigator.gpu.requestAdapter({ featureLevel: 'compatibility' }); } catch (e) {}
+            }
             if (!adapter) return false;
             device = await adapter.requestDevice();
             device.lost.then(info => { if (gpuRunning) recover(); });
@@ -548,6 +584,7 @@ const WebGPU_Turbo = (() => {
             architecture: adapterInfo.architecture || 'unknown',
             device: adapterInfo.device || adapterInfo.description || 'unknown',
             description: adapterInfo.description || '',
+            graphicsApi: adapterInfo.graphicsApi || 'unknown',
             maxWorkgroups: adapter.limits ? adapter.limits.maxComputeWorkgroupsPerDimension : maxWorkgroups,
             maxBufferSize: adapter.limits ? adapter.limits.maxBufferSize : 0,
             gpuVendorDetected: gpuProfile ? detectGPUVendor(adapterInfo) : 'unknown',

@@ -1,0 +1,65 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "חיפוש כתובות ביטקוין בכוח גס, מהודר ל‑WebAssembly ורץ על הליבות של הדפדפן שלכם.",
+  "meta_description": "חפשו את המפתח הפרטי של כתובת ביטקוין ישירות בדפדפן, עם WebAssembly שרץ על כמה ליבות. שום דבר לא יוצא מהמחשב שלכם.",
+  "status": {
+    "loading": "טוען את ה‑WebAssembly",
+    "ready": "מוכן — %{cores}",
+    "running": "מחפש על %{cores}",
+    "error": "טעינת ה‑WebAssembly נכשלה"
+  },
+  "cores": {
+    "one": "ליבה אחת",
+    "two": "%{count} ליבות",
+    "other": "%{count} ליבות"
+  },
+  "config": {
+    "heading": "הגדרות",
+    "presets_label": "טעינת אתגר",
+    "presets_hint": "כל 160 הארנקים של חידת 1000 הביטקוין. אצל אלה שנפתרו המפתח כבר פורסם, ורק בהם החיפוש יכול להסתיים.",
+    "presets_filter_label": "סינון אתגרים",
+    "presets_all": "הכול",
+    "presets_open": "פתוחים",
+    "presets_solved": "נפתרו",
+    "preset_title": "טעינת אתגר %{number} — %{prize} BTC עדיין פתוחים",
+    "preset_title_solved": "טעינת אתגר %{number} — כבר נפתר, מתאים לבדיקה",
+    "start_key": "מפתח פרטי התחלתי",
+    "start_key_hint": "הקסדצימלי, עד 64 תווים.",
+    "target_address": "כתובת ביטקוין היעד",
+    "workers": "ליבות לחיפוש",
+    "start": "התחלת חיפוש",
+    "stop": "עצירה"
+  },
+  "stats": {
+    "speed": "מהירות",
+    "speed_unit": "מפתחות/שנייה",
+    "total": "סך הכול נבדקו",
+    "current_key": "המפתח הנוכחי"
+  },
+  "console": {
+    "heading": "קונסולה",
+    "clear": "ניקוי",
+    "empty": "החיפוש עדיין לא התחיל."
+  },
+  "log": {
+    "preset_loaded": "אתגר %{puzzle} נטען. המפתח ההתחלתי הוגרל בתוך הטווח שלו.",
+    "preset_loaded_solved": "אתגר %{puzzle} נטען. הוא כבר נפתר, ולכן החיפוש מתחיל מתחילת הטווח, במקום שבו אפשר להגיע למפתח הידוע.",
+    "invalid_key": "מפתח פרטי לא תקין. השתמשו בהקסדצימלי, עד 64 תווים.",
+    "invalid_address": "כתובת ביטקוין לא תקינה.",
+    "started": "החיפוש התחיל מ‑%{key}",
+    "target": "יעד: %{address}",
+    "searching": "מחפש על %{cores}.",
+    "stopped": "החיפוש נעצר על ידיכם.",
+    "workers_unavailable": "‏Web Workers אינם זמינים (%{message}). מחפש בתהליכון הראשי.",
+    "worker_error": "שגיאה באחת מליבות החיפוש: %{message}",
+    "wasm_error": "שגיאת WebAssembly: %{message}",
+    "wasm_load_failed": "טעינת ה‑WebAssembly נכשלה: %{message}",
+    "key_rejected": "המפתח נדחה באימות: %{key}",
+    "key_found": "נמצא מפתח: %{key}"
+  },
+  "found": {
+    "heading": "נמצא מפתח",
+    "private_key": "מפתח פרטי",
+    "address": "כתובת"
+  }
+}

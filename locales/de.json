@@ -1,0 +1,64 @@
+{
+  "title": "Weblotery Turbo",
+  "subtitle": "Bitcoin-Adressensuche per Brute-Force, kompiliert für WebAssembly und ausgeführt auf den Kernen Ihres eigenen Browsers.",
+  "meta_description": "Suchen Sie den privaten Schlüssel einer Bitcoin-Adresse direkt im Browser, mit WebAssembly, das auf mehreren Kernen läuft. Nichts verlässt Ihren Rechner.",
+  "status": {
+    "loading": "WebAssembly wird geladen",
+    "ready": "Bereit — %{cores}",
+    "running": "Suche läuft auf %{cores}",
+    "error": "WebAssembly konnte nicht geladen werden"
+  },
+  "cores": {
+    "one": "%{count} Kern",
+    "other": "%{count} Kerne"
+  },
+  "config": {
+    "heading": "Konfiguration",
+    "presets_label": "Herausforderung laden",
+    "presets_hint": "Die 160 Wallets der 1000-BTC-Herausforderung. Gelöste hatten bereits den Schlüssel veröffentlicht und sind die einzigen, bei denen die Suche enden kann.",
+    "presets_filter_label": "Herausforderungen filtern",
+    "presets_all": "Alle",
+    "presets_open": "Offen",
+    "presets_solved": "Gelöst",
+    "preset_title": "Herausforderung %{number} laden — %{prize} BTC offen",
+    "preset_title_solved": "Herausforderung %{number} laden — bereits gelöst, dient als Test",
+    "start_key": "Anfangs-Privatschlüssel",
+    "start_key_hint": "Hexadezimal, bis zu 64 Zeichen.",
+    "target_address": "Ziel-Bitcoin-Adresse",
+    "workers": "Suchkerne",
+    "start": "Suche starten",
+    "stop": "Stoppen"
+  },
+  "stats": {
+    "speed": "Geschwindigkeit",
+    "speed_unit": "Schlüssel/s",
+    "total": "Gesamt geprüft",
+    "current_key": "Aktueller Schlüssel"
+  },
+  "console": {
+    "heading": "Konsole",
+    "clear": "Leeren",
+    "empty": "Die Suche hat noch nicht begonnen."
+  },
+  "log": {
+    "preset_loaded": "Herausforderung %{puzzle} geladen. Anfangsschlüssel zufällig im Bereich gewählt.",
+    "preset_loaded_solved": "Herausforderung %{puzzle} geladen. Bereits gelöst, daher beginnt die Suche am Anfang des Bereichs, von wo aus der bekannte Schlüssel erreichbar ist.",
+    "invalid_key": "Ungültiger privater Schlüssel. Verwenden Sie Hexadezimal mit bis zu 64 Zeichen.",
+    "invalid_address": "Ungültige Bitcoin-Adresse.",
+    "started": "Suche gestartet ab %{key}",
+    "target": "Ziel: %{address}",
+    "searching": "Suche läuft auf %{cores}.",
+    "stopped": "Suche von Ihnen gestoppt.",
+    "workers_unavailable": "Web Workers nicht verfügbar (%{message}). Suche im Hauptthread.",
+    "worker_error": "Fehler in einem Suchkern: %{message}",
+    "wasm_error": "WebAssembly-Fehler: %{message}",
+    "wasm_load_failed": "WebAssembly konnte nicht geladen werden: %{message}",
+    "key_rejected": "Schlüssel bei der Überprüfung abgelehnt: %{key}",
+    "key_found": "Schlüssel gefunden: %{key}"
+  },
+  "found": {
+    "heading": "Schlüssel gefunden",
+    "private_key": "Privatschlüssel",
+    "address": "Adresse"
+  }
+}
