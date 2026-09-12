@@ -821,9 +821,9 @@ function initSliderListeners() {
     }
 
     var hints = {
-        'random': 'Chaves completamente aleat\u00f3rias (multi-lane)',
-        'sequential': 'Caminhada sequencial do in\u00edcio ao fim',
-        'hybrid': 'GPU + CPU simultaneamente (mais r\u00e1pido)'
+        'random': 'Multi-lane aleat\u00f3rio — cada worker sorteia pontos aleat\u00f3rios',
+        'sequential': 'Caminhada sequencial — caminha do in\u00edcio ao fim do intervalo',
+        'hybrid': 'Sequencial + aleat\u00f3rio juntos — cobre mais terreno mais r\u00e1pido'
     };
 
     document.querySelectorAll('.wl-mode-btn:not(.gpu-count-btn)').forEach(function(btn) {

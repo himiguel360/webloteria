@@ -307,7 +307,9 @@ var ADAPTIVE_RATE = 0.5;
 function Searcher(cfg){
   this.minKey = BigInt('0x'+cfg.startKey);
   this.maxKey = BigInt('0x'+cfg.endKey);
-  this.sequential = (cfg.searchMode === 'sequential');
+  this.searchMode = cfg.searchMode || 'random';
+  this.sequential = (this.searchMode === 'sequential');
+  this.hybrid = (this.searchMode === 'hybrid');
   this.maxKeysTotal = cfg.maxKeysTotal ? BigInt(cfg.maxKeysTotal) : 0n;
   this.workerIndex = cfg.workerIndex || 0;
   this.blockKeys = cfg.blockKeys ? BigInt(cfg.blockKeys) : 0n;
@@ -323,18 +325,20 @@ function Searcher(cfg){
   this.pipeRebuildThreshold = B * 0.2;
   this.reportEvery = (cfg.batchSize || 5000) >>> 0;
   this.since = 0;
-  if (this.sequential) {
-    this.seqKey = this.minKey;
-    this.seqEnd = this.maxKey;
-    var kp = scalarMul(this.minKey);
-    this.cx = kp[0]; this.cy = kp[1]; this.cz = kp[2];
-    this.keysTested = 0n;
-  } else {
-    this.idx = 0;
-    var lanes = cfg.lanes || 4;
-    var win = BigInt(cfg.windowKeys || 262144);
-    var wi = this.workerIndex;
-    this.lanes = [];
+
+  /* Sequential state */
+  this.seqKey = this.minKey;
+  this.seqEnd = this.maxKey;
+  var kp = scalarMul(this.minKey);
+  this.seqCx = kp[0]; this.seqCy = kp[1]; this.seqCz = kp[2];
+
+  /* Random lanes state (used by random and hybrid) */
+  this.idx = 0;
+  var lanes = cfg.lanes || 4;
+  var win = BigInt(cfg.windowKeys || 262144);
+  var wi = this.workerIndex;
+  this.lanes = [];
+  if (!this.sequential) {
     var i;
     for(i=0;i<lanes;i++){
       var seed = ((wi * 2654435761) ^ (i * 2246822519) ^ 0x9E3779B9) >>> 0;
@@ -345,47 +349,66 @@ function Searcher(cfg){
       this.lanes[0].setPoint();
     }
   }
+
+  /* Hybrid: alternate between sequential and random */
+  this.hybridTurn = 0;
+  this.hybridSeqRatio = 1;
+  this.hybridRandRatio = 3;
 }
 Searcher.prototype.tick = function(){
   var B = this.pipe.B;
-  if (this.sequential) {
-    if (this.seqKey > this.seqEnd) {
-      self.postMessage({type:'done', workerIndex: this.workerIndex});
-      return true;
-    }
-    var tickStart = performance.now();
-    var f = this.pipe.run(this.cx, this.cy, this.cz);
-    this.cx = f[1]; this.cy = f[2]; this.cz = f[3];
-    if (f[0] >= 0) {
-      var foundKey = this.seqKey + BigInt(f[0]);
-      self.postMessage({type:'found', key: foundKey.toString(16).padStart(64,'0')});
-      return true;
-    }
-    this.seqKey += BigInt(B);
-    this.keysTested += BigInt(B);
-    if (this.maxKeysTotal > 0n && this.keysTested >= this.maxKeysTotal) {
-      self.postMessage({type:'done', workerIndex: this.workerIndex, reason:'quota'});
-      return true;
-    }
-    if (this.blockKeys > 0n && this.keysTested >= this.blockKeys) {
-      self.postMessage({type:'done', workerIndex: this.workerIndex});
-      return true;
-    }
-    if (this.seqKey >= this.seqEnd) {
-      self.postMessage({type:'done', workerIndex: this.workerIndex});
-      return true;
-    }
-    var elapsed = performance.now() - tickStart;
-    this.adaptiveB += ADAPTIVE_RATE * (B * (ADAPTIVE_TARGET_MS / Math.max(elapsed,1)) - this.adaptiveB);
-    this.adaptiveB = Math.min(ADAPTIVE_MAX_B, Math.max(ADAPTIVE_MIN_B, Math.round(this.adaptiveB)));
-    if(Math.abs(this.adaptiveB - this.pipeB) > this.pipeRebuildThreshold) this._rebuildPipe(this.adaptiveB);
-    this.since += B;
-    if (this.since >= this.reportEvery) {
-      self.postMessage({type:'progress', count: this.since, currentKey: this.seqKey.toString(16).padStart(64,'0')});
-      this.since = 0;
-    }
-    return false;
+
+  if (this.hybrid) {
+    var isSeqTurn = (this.hybridTurn % (this.hybridSeqRatio + this.hybridRandRatio)) < this.hybridSeqRatio;
+    this.hybridTurn++;
+    if (isSeqTurn) return this._tickSequential();
+    else return this._tickRandom();
   }
+
+  if (this.sequential) return this._tickSequential();
+  return this._tickRandom();
+};
+
+Searcher.prototype._tickSequential = function(){
+  var B = this.pipe.B;
+  if (this.seqKey > this.seqEnd) {
+    if (!this.hybrid) { self.postMessage({type:'done', workerIndex: this.workerIndex}); return true; }
+    this.seqKey = this.minKey;
+    var kp = scalarMul(this.minKey);
+    this.seqCx = kp[0]; this.seqCy = kp[1]; this.seqCz = kp[2];
+  }
+  var tickStart = performance.now();
+  var f = this.pipe.run(this.seqCx, this.seqCy, this.seqCz);
+  this.seqCx = f[1]; this.seqCy = f[2]; this.seqCz = f[3];
+  if (f[0] >= 0) {
+    var foundKey = this.seqKey + BigInt(f[0]);
+    self.postMessage({type:'found', key: foundKey.toString(16).padStart(64,'0')});
+    return true;
+  }
+  this.seqKey += BigInt(B);
+  this.keysTested += BigInt(B);
+  if (this.maxKeysTotal > 0n && this.keysTested >= this.maxKeysTotal) {
+    self.postMessage({type:'done', workerIndex: this.workerIndex, reason:'quota'});
+    return true;
+  }
+  if (this.blockKeys > 0n && this.keysTested >= this.blockKeys) {
+    self.postMessage({type:'done', workerIndex: this.workerIndex});
+    return true;
+  }
+  var elapsed = performance.now() - tickStart;
+  this.adaptiveB += ADAPTIVE_RATE * (B * (ADAPTIVE_TARGET_MS / Math.max(elapsed,1)) - this.adaptiveB);
+  this.adaptiveB = Math.min(ADAPTIVE_MAX_B, Math.max(ADAPTIVE_MIN_B, Math.round(this.adaptiveB)));
+  if(Math.abs(this.adaptiveB - this.pipeB) > this.pipeRebuildThreshold) this._rebuildPipe(this.adaptiveB);
+  this.since += B;
+  if (this.since >= this.reportEvery) {
+    self.postMessage({type:'progress', count: this.since, currentKey: this.seqKey.toString(16).padStart(64,'0')});
+    this.since = 0;
+  }
+  return false;
+};
+
+Searcher.prototype._tickRandom = function(){
+  var B = this.pipe.B;
   var lane = this.lanes[this.idx];
   var tickStart = performance.now();
   var runsLeft = 4;
@@ -451,12 +474,12 @@ self.onmessage = function(e){
   var m = e.data;
   if (m.type === 'start'){
     _sr = new Searcher(m);
-    _srYield = _sr.sequential ? 40 : 16;
+    _srYield = _sr.sequential ? 40 : (_sr.hybrid ? 20 : 16);
     (function loop(){
       if (_repositionCfg) {
         _sr = new Searcher(_repositionCfg);
         _repositionCfg = null;
-        _srYield = _sr.sequential ? 40 : 16;
+        _srYield = _sr.sequential ? 40 : (_sr.hybrid ? 20 : 16);
       }
       for (var t = 0; t < _srYield; t++) {
         if (_sr.tick()) return;

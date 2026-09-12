@@ -379,16 +379,17 @@ export default class extends Controller {
     const workerCount = this.selectedWorkerCount()
     const mode = window._wl?.searchMode || 'random'
 
-    // Hybrid: GPU + CPU simultaneously
-    // Random/Sequential: CPU only (GPU only as boost if hardware available)
+    // Hybrid: sequential + random lanes in workers, GPU boost always
     if (mode === 'hybrid') {
-      this._tryStartWebGPU(targetHash160, this.startBigKey)
-      this.spawnWorkers(workerCount)
-      this.log("info", "Modo H\u00edbrido: GPU + " + workerCount + " CPU workers")
+      this.log("info", "Modo H\u00edbrido: sequencial + aleat\u00f3rio + GPU")
     } else {
-      this.spawnWorkers(workerCount)
-      this._tryStartWebGPU(targetHash160, this.startBigKey)
+      this.log("info", "Modo: " + (mode === 'sequential' ? 'sequencial' : 'aleat\u00f3rio'))
     }
+
+    // GPU boost always runs when available (any mode)
+    this._tryStartWebGPU(targetHash160, this.startBigKey)
+    // CPU workers always run
+    this.spawnWorkers(workerCount)
     this.startStatsTimer()
     this.startBlockSaveTimer()
 
