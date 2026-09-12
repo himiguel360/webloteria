@@ -854,47 +854,61 @@ export default class extends Controller {
                       (typeof window.WebGPU_Turbo !== 'undefined' && window.gpuAvailable)
     if (!hasWebGPU) return
 
-    this.gpuSearchActive = true
-    this.log("info", "Turbo WebGPU ativado! Backend: " + (window.GPUManager ? GPUManager.getLabel() : 'WebGPU'))
-
-    const progressCb = (p) => {
-      if (!this.running) return
-      this.totalKeys += BigInt(p.count)
-    }
-
-    const foundCb = (keyHex) => {
-      if (this.running) this.onFound(keyHex)
-    }
-
     const self = this
     const gpu = window.WebGPU_Turbo
-    if (!gpu) { this.gpuSearchActive = false; return }
+    if (!gpu) return
 
-    gpu.searchLoop(
-      targetHash160,
-      rangeStart,
-      rangeStart + BLOCK_SIZE * 100n,
-      progressCb,
-      foundCb
-    ).then(function (result) {
-      self.gpuSearchActive = false
-      if (self.running) {
-        self.log("info", "GPU search concluido: " + result.totalChecked.toLocaleString() + " chaves.")
+    // Ensure WebGPU_Turbo has its own device+pipeline initialized
+    async function _startGPU() {
+      if (!gpu.isAvailable()) {
+        self.log("info", "Inicializando pipeline WebGPU...")
+        const sharedMod = window._wl ? window._wl._sharedWasmModule : null
+        const ok = await gpu.init(sharedMod)
+        if (!ok) { self.log("warn", "WebGPU init falhou"); return }
+        const setupOk = await gpu.setup()
+        if (!setupOk) { self.log("warn", "WebGPU setup falhou"); return }
       }
-    }).catch(function (e) {
-      self.gpuSearchActive = false
-      self.log("warn", "GPU search erro: " + e.message)
-      if (self.running && window.gpuAvailable) {
-        self.log("info", "Tentando recuperar GPU em 2s...")
-        setTimeout(function () {
-          if (!self.running) return
-          try { gpu.recover() } catch {}
-          self.gpuSearchActive = true
-          gpu.searchLoop(targetHash160, rangeStart, rangeStart + BLOCK_SIZE * 100n, progressCb, foundCb)
-            .catch(function () { self.gpuSearchActive = false })
-        }, 2000)
+
+      self.gpuSearchActive = true
+      self.log("info", "Turbo WebGPU ativado! Backend: " + (window.GPUManager ? GPUManager.getLabel() : 'WebGPU'))
+
+      const progressCb = (p) => {
+        if (!self.running) return
+        self.totalKeys += BigInt(p.count)
       }
-    })
+
+      const foundCb = (keyHex) => {
+        if (self.running) self.onFound(keyHex)
+      }
+
+      gpu.searchLoop(
+        targetHash160,
+        rangeStart,
+        rangeStart + BLOCK_SIZE * 100n,
+        progressCb,
+        foundCb
+      ).then(function (result) {
+        self.gpuSearchActive = false
+        if (self.running) {
+          self.log("info", "GPU search concluido: " + result.totalChecked.toLocaleString() + " chaves.")
+        }
+      }).catch(function (e) {
+        self.gpuSearchActive = false
+        self.log("warn", "GPU search erro: " + e.message)
+        if (self.running && window.gpuAvailable) {
+          self.log("info", "Tentando recuperar GPU em 2s...")
+          setTimeout(function () {
+            if (!self.running) return
+            try { gpu.recover() } catch {}
+            self.gpuSearchActive = true
+            gpu.searchLoop(targetHash160, rangeStart, rangeStart + BLOCK_SIZE * 100n, progressCb, foundCb)
+              .catch(function () { self.gpuSearchActive = false })
+          }, 2000)
+        }
+      })
+    }
+
+    _startGPU()
   }
 
   /* ------------------------------------------------------------------ */
