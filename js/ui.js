@@ -832,9 +832,9 @@ function initSliderListeners() {
         'hybrid': 'Sequencial + aleat\u00f3rio juntos — cobre mais terreno mais r\u00e1pido'
     };
 
-    document.querySelectorAll('.wl-mode-btn:not(.gpu-count-btn)').forEach(function(btn) {
+    document.querySelectorAll('.wl-modes:not(.wl-gpu-modes) .wl-mode-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
-            document.querySelectorAll('.wl-mode-btn:not(.gpu-count-btn)').forEach(function(b) { b.classList.remove('is-active'); });
+            document.querySelectorAll('.wl-modes:not(.wl-gpu-modes) .wl-mode-btn').forEach(function(b) { b.classList.remove('is-active'); });
             btn.classList.add('is-active');
             var mode = btn.getAttribute('data-mode');
             if (window._wl) window._wl.searchMode = mode;
