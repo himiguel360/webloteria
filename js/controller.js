@@ -720,6 +720,14 @@ export default class extends Controller {
     this.foundBodyTarget.appendChild(record)
     this.foundCardTarget.classList.remove("hidden")
 
+    // Also populate floating found panel (ui.js listens for clicks on it)
+    const fpKey = document.getElementById('found-panel-key')
+    const fpAddr = document.getElementById('found-panel-addr')
+    const fpPanel = document.getElementById('found-panel')
+    if (fpKey) fpKey.textContent = keyHex
+    if (fpAddr) fpAddr.textContent = address
+    if (fpPanel) fpPanel.classList.remove('hidden')
+
     if (window.WbloteryUI?.setEngineState) {
       window.WbloteryUI.setEngineState("found")
     }

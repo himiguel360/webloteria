@@ -97,3 +97,18 @@ Object.defineProperty(window, '_smallRange', {
   set: function(v) { window._wl._smallRange = v; },
   enumerable: true
 });
+Object.defineProperty(window, 'searchMode', {
+  get: function() { return window._wl.searchMode; },
+  set: function(v) { window._wl.searchMode = v; },
+  enumerable: true
+});
+Object.defineProperty(window, 'multiGpuCount', {
+  get: function() { return window._wl.multiGpuCount; },
+  set: function(v) { window._wl.multiGpuCount = v; },
+  enumerable: true
+});
+Object.defineProperty(window, '_sharedWasmModule', {
+  get: function() { return window._wl._sharedWasmModule; },
+  set: function(v) { window._wl._sharedWasmModule = v; },
+  enumerable: true
+});

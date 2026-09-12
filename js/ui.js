@@ -186,15 +186,16 @@ function _showMatchOverlay(hexKey, addr, pctStr) {
 /*  Live keys display                                                  */
 /* ------------------------------------------------------------------ */
 
-function renderLiveKeys() {
+function renderLiveKeys(buffer) {
     var list = document.getElementById('livekeys-list');
     var counter = document.getElementById('livekeys-count');
     if (!list || !counter) return;
     list.innerHTML = '';
-    var len = liveKeysBuffer.length;
+    var items = buffer || [];
+    var len = items.length;
     counter.textContent = len;
     for (var i = len - 1; i >= 0; i--) {
-        var item = liveKeysBuffer[i];
+        var item = items[i];
         var div = document.createElement('div');
         div.className = 'wl-livekeys__item';
         div.innerHTML = '<span class="key">' + item.key + '</span>';
@@ -238,6 +239,7 @@ function initProgressThumb() {
     var track = document.getElementById('progress-track');
     if (!thumb || !track) return;
 
+    var _thumbDragging = false;
     var tooltip = document.createElement('div');
     tooltip.className = 'wl-progress__thumb-tooltip';
     tooltip.style.display = 'none';
@@ -578,6 +580,11 @@ function initSliderListeners() {
     var _randomScanIndex = 0;
     var _randomWindowSize = 1000;
     var _autoScanTargetH160 = null;
+    var _autoScanTimer = null;
+    var _randomExataTicksLeft = 0;
+    var _randomExataStart = 0;
+    var _randomJumpTimer = null;
+    var _randomJumpActive = false;
     var autoScanBtn = document.getElementById('auto-scan-btn');
     var autoScanSpeed = document.getElementById('auto-scan-speed');
     var autoScanRandomBtn = document.getElementById('auto-scan-random');
@@ -823,10 +830,10 @@ function initSliderListeners() {
         btn.addEventListener('click', function() {
             document.querySelectorAll('.wl-mode-btn:not(.gpu-count-btn)').forEach(function(b) { b.classList.remove('is-active'); });
             btn.classList.add('is-active');
-            searchMode = btn.getAttribute('data-mode');
-            if (window._wl) window._wl.searchMode = searchMode;
+            var mode = btn.getAttribute('data-mode');
+            if (window._wl) window._wl.searchMode = mode;
             var hint = document.getElementById('mode-hint');
-            if (hint) hint.textContent = hints[searchMode] || '';
+            if (hint) hint.textContent = hints[mode] || '';
         });
     });
 
@@ -834,10 +841,11 @@ function initSliderListeners() {
         btn.addEventListener('click', function() {
             document.querySelectorAll('.gpu-count-btn').forEach(function(b) { b.classList.remove('is-active'); });
             btn.classList.add('is-active');
-            multiGpuCount = parseInt(btn.getAttribute('data-gpus') || '1', 10);
+            var gpuCount = parseInt(btn.getAttribute('data-gpus') || '1', 10);
+            if (window._wl) window._wl.multiGpuCount = gpuCount;
             var gpuHint = document.getElementById('gpu-hint');
-            if (multiGpuCount > 1) {
-                if (gpuHint) gpuHint.textContent = multiGpuCount + ' abas ser\u00e3o abertas \u2014 cada uma com sua GPU WebGPU independente.';
+            if (gpuCount > 1) {
+                if (gpuHint) gpuHint.textContent = gpuCount + ' abas ser\u00e3o abertas \u2014 cada uma com sua GPU WebGPU independente.';
             } else {
                 if (gpuHint) gpuHint.textContent = 'Cada GPU abre uma aba separada com sua inst\u00e2ncia WebGPU';
             }
@@ -1222,7 +1230,7 @@ function _batchVerifyAll() {
                 if (workersDone >= N) finalize();
             };
             var vMsg = { type: 'verify', keys: slice, targetHash160: targetH160 };
-            if (_sharedWasmModule) vMsg.wasmModule = _sharedWasmModule;
+            if (window._wl && window._wl._sharedWasmModule) vMsg.wasmModule = window._wl._sharedWasmModule;
             worker.postMessage(vMsg);
         })(w);
     }
