@@ -9,7 +9,7 @@ const BATCH_ADJUST_RATE = 0.5
 const STATS_INTERVAL_MS = 500
 const SPEED_SMOOTHING = 0.3
 
-const BLOCK_SIZE = 50000000n
+const BLOCK_SIZE = 1073741824n
 
 class InlineWorker {
   constructor() {
