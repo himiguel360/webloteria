@@ -354,7 +354,7 @@ export default class extends Controller {
     this._currentPuzzleId = this._detectPuzzleId(target)
     const puzzleRangeEnd = this._currentPuzzleId > 0
       ? (1n << BigInt(this._currentPuzzleId)) - 1n
-      : this.startBigKey + BLOCK_SIZE * 100n
+      : this.startBigKey + BLOCK_SIZE * 500n
     this._currentWallet = { address: target, range: [this.startBigKey, puzzleRangeEnd] }
 
     // Update bridge globals for ui.js/sync.js
@@ -369,7 +369,7 @@ export default class extends Controller {
     this.blockTracker = new window.BlockTracker(
       this._currentPuzzleId,
       this.startBigKey,
-      this.startBigKey + BLOCK_SIZE * 100n
+      this.startBigKey + BLOCK_SIZE * 500n
     )
     this.blockTracker.reset()
 
@@ -545,6 +545,7 @@ export default class extends Controller {
         blockKeys: blockKeyCount.toString()
       })
       this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
+      return true
     } else {
       const count = this.batchSize
       const searchMode = window._wl?.searchMode || 'random'
@@ -563,6 +564,7 @@ export default class extends Controller {
         blockKeys: String(count)
       })
       this.nextKey += BigInt(count)
+      return true
     }
   }
 
@@ -933,7 +935,7 @@ export default class extends Controller {
       gpu.searchLoop(
         targetHash160,
         rangeStart,
-        rangeStart + BLOCK_SIZE * 100n,
+        rangeStart + BLOCK_SIZE * 500n,
         progressCb,
         foundCb
       ).then(function (result) {
@@ -950,7 +952,7 @@ export default class extends Controller {
             if (!self.running) return
             try { gpu.recover() } catch {}
             self.gpuSearchActive = true
-            gpu.searchLoop(targetHash160, rangeStart, rangeStart + BLOCK_SIZE * 100n, progressCb, foundCb)
+            gpu.searchLoop(targetHash160, rangeStart, rangeStart + BLOCK_SIZE * 500n, progressCb, foundCb)
               .catch(function () { self.gpuSearchActive = false })
           }, 2000)
         }
@@ -1030,7 +1032,7 @@ export default class extends Controller {
     if (!this.running) return
     const bt = this.blockTracker
     const rangeStart = bt ? bt.rangeStart : this.startBigKey
-    const rangeEnd = bt ? bt.rangeEnd : this.startBigKey + BLOCK_SIZE * 100n
+    const rangeEnd = bt ? bt.rangeEnd : this.startBigKey + BLOCK_SIZE * 500n
     const range = rangeEnd - rangeStart
     const pctScaled = BigInt(Math.floor(pct * 1e8))
     const offset = range * pctScaled / (100n * 100000000n)
