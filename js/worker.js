@@ -372,7 +372,7 @@ Searcher.prototype.tick = function(){
 Searcher.prototype._tickSequential = function(){
   var B = this.pipe.B;
   if (this.seqKey > this.seqEnd) {
-    if (!this.hybrid) { self.postMessage({type:'done', workerIndex: this.workerIndex}); return true; }
+    if (!this.hybrid) { self.postMessage({type:'done', workerIndex: this.workerIndex, count: Number(this.keysTested)}); return true; }
     this.seqKey = this.minKey;
     var kp = scalarMul(this.minKey);
     this.seqCx = kp[0]; this.seqCy = kp[1]; this.seqCz = kp[2];
@@ -388,11 +388,11 @@ Searcher.prototype._tickSequential = function(){
   this.seqKey += BigInt(B);
   this.keysTested += BigInt(B);
   if (this.maxKeysTotal > 0n && this.keysTested >= this.maxKeysTotal) {
-    self.postMessage({type:'done', workerIndex: this.workerIndex, reason:'quota'});
+    self.postMessage({type:'done', workerIndex: this.workerIndex, count: Number(this.keysTested), reason:'quota'});
     return true;
   }
   if (this.blockKeys > 0n && this.keysTested >= this.blockKeys) {
-    self.postMessage({type:'done', workerIndex: this.workerIndex});
+    self.postMessage({type:'done', workerIndex: this.workerIndex, count: Number(this.keysTested)});
     return true;
   }
   var elapsed = performance.now() - tickStart;
@@ -435,11 +435,11 @@ Searcher.prototype._tickRandom = function(){
   if(Math.abs(this.adaptiveB - this.pipeB) > this.pipeRebuildThreshold) this._rebuildPipe(this.adaptiveB);
   this.keysTested += BigInt(B * actualRuns);
   if (this.maxKeysTotal > 0n && this.keysTested >= this.maxKeysTotal) {
-    self.postMessage({type:'done', workerIndex: this.workerIndex, reason:'quota'});
+    self.postMessage({type:'done', workerIndex: this.workerIndex, count: Number(this.keysTested), reason:'quota'});
     return true;
   }
   if (this.blockKeys > 0n && this.keysTested >= this.blockKeys) {
-    self.postMessage({type:'done', workerIndex: this.workerIndex});
+    self.postMessage({type:'done', workerIndex: this.workerIndex, count: Number(this.keysTested)});
     return true;
   }
   this.since += B * actualRuns;

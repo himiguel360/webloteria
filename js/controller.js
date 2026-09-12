@@ -253,7 +253,8 @@ export default class extends Controller {
     const cores = navigator.hardwareConcurrency || 4
     const preferred = Math.max(1, cores - 1)
     this.workerCountTarget.innerHTML = ""
-    for (let n = 1; n <= cores; n++) {
+    const max = Math.max(cores * 2, 128)
+    for (let n = 1; n <= max; n++) {
       const option = document.createElement("option")
       option.value = String(n)
       option.textContent = this.cores(n)
@@ -499,6 +500,7 @@ export default class extends Controller {
 
   spawnWorkers(count) {
     for (let i = 0; i < count; i++) {
+      if (!this.running) return
       let worker
       try {
         worker = new Worker(`js/worker.js${this.assetQuery}`)
@@ -513,7 +515,7 @@ export default class extends Controller {
         this.log("error", this.t("log.worker_error", { message: event.message }))
         this.stop()
       }
-      this.addWorker(worker)
+      if (!this.addWorker(worker)) break
     }
   }
 
@@ -524,7 +526,7 @@ export default class extends Controller {
 
     if (this.blockTracker) {
       const block = this.blockTracker.claimBlock(BLOCK_SIZE)
-      if (!block) { this.finishAllDone(); return }
+      if (!block) return false
       this.workerBlocks[idx] = block
       const blockKeyCount = block.end - block.start + 1n
       const searchMode = window._wl?.searchMode || 'random'
@@ -571,6 +573,7 @@ export default class extends Controller {
 
   teardownWorkers() {
     this.workers.forEach(worker => {
+      if (!worker) return
       worker.onmessage = null
       worker.onerror = null
       worker.terminate()
@@ -584,7 +587,14 @@ export default class extends Controller {
     if (this.blockTracker) {
       const block = this.blockTracker.claimBlock(BLOCK_SIZE)
       if (!block) {
-        this.finishAllDone()
+        worker.terminate()
+        const idx = this.workers.indexOf(worker)
+        if (idx !== -1) {
+          this.workers[idx] = null
+          delete this.workerBlocks[idx]
+        }
+        const active = this.workers.filter(w => w !== null)
+        if (active.length === 0) this.finishAllDone()
         return
       }
       const idx = this.workers.indexOf(worker)
