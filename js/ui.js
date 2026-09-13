@@ -1499,7 +1499,7 @@ function _batchScanStop() {
 /* ------------------------------------------------------------------ */
 
 function currentWorkerCount() {
-    var el = document.getElementById('worker-count');
+    var el = document.getElementById('workerCount');
     var v = el ? el.value : 'auto';
     if (v === 'auto') {
         return navigator.hardwareConcurrency || 4;
@@ -1511,13 +1511,14 @@ function currentWorkerCount() {
 }
 
 function setEngineState(state) {
-    var dot = document.getElementById('engine-dot');
-    var label = document.getElementById('engine-label');
+    var dot = document.querySelector('[data-weblotery-target="statusDot"]');
+    var label = document.querySelector('[data-weblotery-target="statusText"]');
     if (!dot || !label) return;
     dot.className = 'wl-engine__dot wl-engine__dot--' + state;
     if (state === 'running') label.textContent = 'Buscando';
     else if (state === 'ready') label.textContent = 'Pronto';
     else if (state === 'error') label.textContent = 'Erro';
+    else if (state === 'loading') label.textContent = 'Carregando WebAssembly';
 }
 
 function detectCPUCapabilities() {

@@ -475,6 +475,11 @@ export default class extends Controller {
     this.stopBlockSaveTimer()
     this.stopLiveKeysTimer()
 
+    if (this._gpuPipelines) {
+      this._gpuPipelines.forEach(p => { try { p.gpu?.stop() } catch {} })
+      this._gpuPipelines = []
+    }
+
     if (window.WebGPU_Turbo && typeof window.WebGPU_Turbo.stop === "function") {
       try { window.WebGPU_Turbo.stop() } catch {}
     }
@@ -845,18 +850,18 @@ export default class extends Controller {
     this.statsTimer = null
   }
 
-  updateStats({ sampleSpeed = true } = {}) {
+  updateStats({ sampleSpeed: shouldSample = true } = {}) {
     const now = performance.now()
     const seconds = (now - this.lastSample.at) / 1000
 
-    if (sampleSpeed && seconds > 0) {
-      const sampleSpeed = Number(this.totalKeys - this.lastSample.keys) / seconds
+    if (shouldSample && seconds > 0) {
+      const currentSpeed = Number(this.totalKeys - this.lastSample.keys) / seconds
       this.smoothedSpeed = this.smoothedSpeed === 0
-        ? sampleSpeed
-        : this.smoothedSpeed + SPEED_SMOOTHING * (sampleSpeed - this.smoothedSpeed)
+        ? currentSpeed
+        : this.smoothedSpeed + SPEED_SMOOTHING * (currentSpeed - this.smoothedSpeed)
       this.lastSample = { at: now, keys: this.totalKeys }
 
-      this._speedAvg.push(sampleSpeed)
+      this._speedAvg.push(currentSpeed)
       if (this._speedAvg.length > 5) this._speedAvg.shift()
     }
 
