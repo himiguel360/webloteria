@@ -374,7 +374,7 @@ export default class extends Controller {
 
     // Bridge globals = range INTEIRO da carteira (para slider/random/pctToKey)
     if (window._wl) {
-      window._wl.rangeStart = 0n
+      window._wl.rangeStart = this._currentPuzzleId > 0 ? (1n << BigInt(this._currentPuzzleId - 1)) : 0n
       window._wl.rangeEnd = puzzleRangeEnd
     }
 
