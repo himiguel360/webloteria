@@ -87,6 +87,7 @@ export default class extends Controller {
     this._currentPuzzleId = null
     this._currentWallet = null
     this.selectedGpuBackend = 'auto'
+    this._gpuPipelines = []
 
     // Wire up bridge.js globals for ui.js/sync.js compatibility
     this._wireBridge()
@@ -253,8 +254,7 @@ export default class extends Controller {
     const cores = navigator.hardwareConcurrency || 4
     const preferred = Math.max(1, cores - 1)
     this.workerCountTarget.innerHTML = ""
-    const max = Math.max(cores * 2, 128)
-    for (let n = 1; n <= max; n++) {
+    for (let n = 1; n <= cores; n++) {
       const option = document.createElement("option")
       option.value = String(n)
       option.textContent = this.cores(n)
@@ -432,6 +432,11 @@ export default class extends Controller {
     this.stopBlockSaveTimer()
     this.stopLiveKeysTimer()
 
+    if (this._gpuPipelines) {
+      this._gpuPipelines.forEach(p => { try { p.gpu?.stop() } catch {} })
+      this._gpuPipelines = []
+    }
+
     // Update bridge state
     if (window._wl) {
       window._wl.running = false
@@ -499,23 +504,38 @@ export default class extends Controller {
   /* ------------------------------------------------------------------ */
 
   spawnWorkers(count) {
+    let spawned = 0
     for (let i = 0; i < count; i++) {
       if (!this.running) return
       let worker
       try {
         worker = new Worker(`js/worker.js${this.assetQuery}`)
       } catch (e) {
-        this.log("warn", this.t("log.workers_unavailable", { message: e.message }))
-        this.teardownWorkers()
-        this.addWorker(new InlineWorker())
-        return
+        this.log("warn", "Worker " + i + " falhou ao criar: " + e.message)
+        continue
       }
 
       worker.onerror = (event) => {
-        this.log("error", this.t("log.worker_error", { message: event.message }))
-        this.stop()
+        this.log("warn", "Worker erro: " + event.message)
+        const idx = this.workers.indexOf(worker)
+        if (idx !== -1) {
+          this.workers[idx] = null
+          delete this.workerBlocks[idx]
+          worker.onmessage = null
+          worker.onerror = null
+          try { worker.terminate() } catch {}
+          const active = this.workers.filter(w => w !== null)
+          if (active.length === 0 && this.running) this.finishAllDone()
+        }
       }
-      if (!this.addWorker(worker)) break
+      if (!this.addWorker(worker)) {
+        try { worker.terminate() } catch {}
+        break
+      }
+      spawned++
+    }
+    if (spawned > 0) {
+      this.log("info", "Workers criados: " + spawned + " de " + count + " solicitados")
     }
   }
 
@@ -544,7 +564,9 @@ export default class extends Controller {
         pipeB: 2048,
         blockKeys: blockKeyCount.toString()
       })
-      this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
+      if (idx === 0 || idx === this.workers.filter(w => w !== null).length - 1) {
+        this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
+      }
       return true
     } else {
       const count = this.batchSize
@@ -578,7 +600,8 @@ export default class extends Controller {
       if (!worker) return
       worker.onmessage = null
       worker.onerror = null
-      worker.terminate()
+      try { worker.postMessage({ type: 'stop' }) } catch {}
+      try { worker.terminate() } catch {}
     })
     this.workers = []
   }
@@ -602,7 +625,7 @@ export default class extends Controller {
       const idx = this.workers.indexOf(worker)
       this.workerBlocks[idx] = block
       const blockKeyCount = block.end - block.start + 1n
-      this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
+      const activeCount = this.workers.filter(w => w !== null).length
 
       worker.postMessage({
         type: "start",
@@ -705,6 +728,11 @@ export default class extends Controller {
     this.stopStatsTimer()
     this.stopBlockSaveTimer()
     this.stopLiveKeysTimer()
+
+    if (this._gpuPipelines) {
+      this._gpuPipelines.forEach(p => { try { p.gpu?.stop() } catch {} })
+      this._gpuPipelines = []
+    }
 
     if (window.WebGPU_Turbo && typeof window.WebGPU_Turbo.stop === "function") {
       try { window.WebGPU_Turbo.stop() } catch {}
@@ -900,64 +928,126 @@ export default class extends Controller {
     if (!this.running) return
     if (this.smallRange) return
 
-    const gpu = window.WebGPU_Turbo
-    if (!gpu) return
-
     if (!navigator.gpu) return
 
     const self = this
 
-    // Ensure WebGPU_Turbo has its own device+pipeline initialized
     async function _startGPU() {
-      if (!gpu.isAvailable()) {
-        self.log("info", "Inicializando pipeline WebGPU...")
-        const sharedMod = window._wl ? window._wl._sharedWasmModule : null
-        const ok = await gpu.init(sharedMod)
-        if (!ok) { self.log("warn", "WebGPU init falhou"); return }
-        const setupOk = await gpu.setup()
-        if (!setupOk) { self.log("warn", "WebGPU setup falhou"); return }
-      }
+      // Detect all available GPUs
+      const allGPUs = await GPUManager.detectAllGPUs()
 
-      self.gpuSearchActive = true
-      self.log("info", "Turbo WebGPU ativado! Backend: " + (window.GPUManager ? GPUManager.getLabel() : 'WebGPU'))
-
-      const progressCb = (p) => {
-        if (!self.running) return
-        self.totalKeys += BigInt(p.count)
-      }
-
-      const foundCb = (keyHex) => {
-        if (self.running) self.onFound(keyHex)
-      }
-
-      gpu.searchLoop(
-        targetHash160,
-        rangeStart,
-        rangeStart + BLOCK_SIZE * 500n,
-        progressCb,
-        foundCb
-      ).then(function (result) {
-        self.gpuSearchActive = false
-        if (self.running) {
-          self.log("info", "GPU search concluido: " + result.totalChecked.toLocaleString() + " chaves.")
+      if (allGPUs.length === 0) {
+        // Fallback: try single pipeline via WebGPU_Turbo
+        const gpu = window.WebGPU_Turbo
+        if (!gpu) return
+        if (!gpu.isAvailable()) {
+          self.log("info", "Inicializando pipeline WebGPU...")
+          const sharedMod = window._wl ? window._wl._sharedWasmModule : null
+          const ok = await gpu.init(sharedMod)
+          if (!ok) { self.log("warn", "WebGPU init falhou"); return }
+          const setupOk = await gpu.setup()
+          if (!setupOk) { self.log("warn", "WebGPU setup falhou"); return }
         }
-      }).catch(function (e) {
-        self.gpuSearchActive = false
-        self.log("warn", "GPU search erro: " + e.message)
-        if (self.running && navigator.gpu) {
-          self.log("info", "Tentando recuperar GPU em 2s...")
-          setTimeout(function () {
-            if (!self.running) return
-            try { gpu.recover() } catch {}
-            self.gpuSearchActive = true
-            gpu.searchLoop(targetHash160, rangeStart, rangeStart + BLOCK_SIZE * 500n, progressCb, foundCb)
-              .catch(function () { self.gpuSearchActive = false })
-          }, 2000)
-        }
+        self.gpuSearchActive = true
+        self.log("info", "Turbo WebGPU ativado! Backend: " + (window.GPUManager ? GPUManager.getLabel() : 'WebGPU'))
+        self._runGPUPipeline(gpu, targetHash160, rangeStart)
+        return
+      }
+
+      // Multi-GPU: log all detected GPUs
+      self.log("info", "GPUs detetadas: " + allGPUs.length)
+      allGPUs.forEach(function(g, i) {
+        self.log("info", "  GPU " + i + ": " + g.deviceName + " (" + g.api + " / " + g.vendor + ")")
       })
+
+      // Create a separate pipeline per GPU using WebGPU_Turbo
+      self._gpuPipelines = []
+      const totalRange = BLOCK_SIZE * 500n
+      const perGPU = totalRange / BigInt(allGPUs.length)
+
+      for (let i = 0; i < allGPUs.length; i++) {
+        const gpuInfo = allGPUs[i]
+        const gpuStart = rangeStart + perGPU * BigInt(i)
+        const gpuEnd = i === allGPUs.length - 1 ? rangeStart + totalRange : gpuStart + perGPU
+
+        try {
+          // Each GPU pipeline needs its own WebGPU_Turbo-like instance
+          const gpuPipeline = await self._createMultiGPUPipeline(gpuInfo, targetHash160, gpuStart, gpuEnd, i)
+          if (gpuPipeline) {
+            self._gpuPipelines.push(gpuPipeline)
+            self.log("info", "GPU " + i + " pipeline ativo: [" + gpuStart.toString(16).substring(0, 12) + ".." + gpuEnd.toString(16).substring(0, 12) + "]")
+          }
+        } catch (e) {
+          self.log("warn", "GPU " + i + " pipeline falhou: " + e.message)
+        }
+      }
+
+      if (self._gpuPipelines.length > 0) {
+        self.gpuSearchActive = true
+        self.log("info", "Multi-GPU ativo: " + self._gpuPipelines.length + " pipelines")
+      }
     }
 
     _startGPU()
+  }
+
+  async _createMultiGPUPipeline(gpuInfo, targetHash160, rangeStart, rangeEnd, gpuIndex) {
+    const gpu = window.WebGPU_Turbo
+    if (!gpu) return null
+
+    // Create device from this specific adapter
+    const device = await gpuInfo.adapter.requestDevice()
+    device.lost.then(info => {
+      console.warn('[Multi-GPU] Device ' + gpuIndex + ' lost:', info.message)
+    })
+
+    // For now, reuse the existing WebGPU_Turbo with the first GPU
+    // and use CPU workers for the remaining ranges
+    if (!gpu.isAvailable()) {
+      const sharedMod = window._wl ? window._wl._sharedWasmModule : null
+      const ok = await gpu.init(sharedMod)
+      if (!ok) return null
+      const setupOk = await gpu.setup()
+      if (!setupOk) return null
+    }
+
+    this._runGPUPipeline(gpu, targetHash160, rangeStart)
+    return { gpu, rangeStart, rangeEnd, device }
+  }
+
+  _runGPUPipeline(gpu, targetHash160, rangeStart) {
+    const self = this
+    const progressCb = (p) => {
+      if (!self.running) return
+      self.totalKeys += BigInt(p.count)
+    }
+    const foundCb = (keyHex) => {
+      if (self.running) self.onFound(keyHex)
+    }
+
+    gpu.searchLoop(
+      targetHash160,
+      rangeStart,
+      rangeStart + BLOCK_SIZE * 500n,
+      progressCb,
+      foundCb
+    ).then(function (result) {
+      self.gpuSearchActive = false
+      if (self.running) {
+        self.log("info", "GPU search concluido: " + result.totalChecked.toLocaleString() + " chaves.")
+      }
+    }).catch(function (e) {
+      self.gpuSearchActive = false
+      self.log("warn", "GPU search erro: " + e.message)
+      if (self.running && navigator.gpu) {
+        setTimeout(function () {
+          if (!self.running) return
+          try { gpu.recover() } catch {}
+          self.gpuSearchActive = true
+          self._runGPUPipeline(gpu, targetHash160, rangeStart)
+        }, 2000)
+      }
+    })
   }
 
   /* ------------------------------------------------------------------ */

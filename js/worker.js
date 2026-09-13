@@ -469,13 +469,21 @@ Searcher.prototype._rebuildPipe = function(newB){
 var _sr = null;
 var _repositionCfg = null;
 var _srYield = 16;
+var _workerStopped = false;
 
 self.onmessage = function(e){
   var m = e.data;
+  if (m.type === 'stop'){
+    _workerStopped = true;
+    _sr = null;
+    return;
+  }
   if (m.type === 'start'){
+    _workerStopped = false;
     _sr = new Searcher(m);
     _srYield = _sr.sequential ? 40 : (_sr.hybrid ? 20 : 16);
     (function loop(){
+      if (_workerStopped) return;
       if (_repositionCfg) {
         _sr = new Searcher(_repositionCfg);
         _repositionCfg = null;

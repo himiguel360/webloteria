@@ -136,6 +136,79 @@ const GPUManager = (() => {
     return 'unknown';
   }
 
+  // ── Multi-GPU Detection ──────────────────────────────────────
+
+  async function detectAllGPUs() {
+    if (!navigator.gpu) return [];
+    const gpus = [];
+    try {
+      if (typeof navigator.gpu.requestAdapters === 'function') {
+        const adapters = await navigator.gpu.requestAdapters();
+        for (const adapter of adapters) {
+          let adapterInfo = {};
+          try {
+            if (typeof adapter.requestAdapterInfo === 'function') {
+              adapterInfo = await adapter.requestAdapterInfo();
+            } else if (adapter.info) {
+              adapterInfo = adapter.info;
+            }
+          } catch (e) {}
+          const vendor = detectGPUVendor(adapterInfo);
+          const api = detectGraphicsAPI(adapterInfo);
+          gpus.push({
+            adapter,
+            vendor,
+            api,
+            deviceName: adapterInfo.device || adapterInfo.description || 'unknown',
+            vendorName: adapterInfo.vendor || 'unknown',
+            architecture: adapterInfo.architecture || 'unknown'
+          });
+        }
+      } else {
+        // Fallback: single adapter
+        let adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        if (!adapter) adapter = await navigator.gpu.requestAdapter();
+        if (adapter) {
+          let adapterInfo = {};
+          try {
+            if (typeof adapter.requestAdapterInfo === 'function') {
+              adapterInfo = await adapter.requestAdapterInfo();
+            } else if (adapter.info) {
+              adapterInfo = adapter.info;
+            }
+          } catch (e) {}
+          const vendor = detectGPUVendor(adapterInfo);
+          const api = detectGraphicsAPI(adapterInfo);
+          gpus.push({
+            adapter,
+            vendor,
+            api,
+            deviceName: adapterInfo.device || adapterInfo.description || 'unknown',
+            vendorName: adapterInfo.vendor || 'unknown',
+            architecture: adapterInfo.architecture || 'unknown'
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[GPU] Multi-GPU detection failed:', e);
+    }
+    return gpus;
+  }
+
+  function detectGraphicsAPI(adapterInfo) {
+    const desc = ((adapterInfo.description || '') + ' ' + (adapterInfo.architecture || '')).toLowerCase();
+    if (desc.includes('vulkan') || desc.includes('mesa') || desc.includes('radv')) return 'Vulkan';
+    if (desc.includes('d3d') || desc.includes('direct') || desc.includes('dx12')) return 'Direct3D 12';
+    if (desc.includes('metal') || desc.includes('apple')) return 'Metal';
+    if (desc.includes('opengl') || desc.includes('angle')) return 'OpenGL ES (via ANGLE)';
+    const ua = navigator.userAgent.toLowerCase();
+    const pf = (navigator.platform || '').toLowerCase();
+    if (pf.includes('linux') || ua.includes('linux')) return 'Vulkan (Mesa)';
+    if (pf.includes('mac') || ua.includes('mac')) return 'Metal';
+    if (ua.includes('windows') || pf.includes('win')) return 'Direct3D 12';
+    return 'unknown';
+  }
+
   // ── Init ──────────────────────────────────────────────────────
 
   async function init(preferred) {
@@ -197,6 +270,7 @@ const GPUManager = (() => {
     detectWebGPU,
     detectWebGL,
     detectCPU,
+    detectAllGPUs,
     BACKENDS
   };
 })();
