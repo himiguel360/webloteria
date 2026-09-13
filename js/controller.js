@@ -362,8 +362,6 @@ export default class extends Controller {
       window._wl.running = true
       window._wl.currentWallet = this._currentWallet
       window._wl.currentSel = this._currentPuzzleId
-      window._wl.rangeStart = this.startBigKey
-      window._wl.rangeEnd = puzzleRangeEnd
     }
 
     this.blockTracker = new window.BlockTracker(
@@ -372,6 +370,10 @@ export default class extends Controller {
       this.startBigKey + BLOCK_SIZE * 500n
     )
     this.blockTracker.reset()
+
+    const btRangeEnd = this.startBigKey + BLOCK_SIZE * 500n
+    window._wl.rangeStart = this.startBigKey
+    window._wl.rangeEnd = btRangeEnd
 
     this.log("info", this.t("log.started", { key: keyHex }))
     this.log("info", this.t("log.target", { address: target }))
