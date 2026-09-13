@@ -96,6 +96,10 @@ export default class extends Controller {
     // Init GPU manager
     this._initGPUManager()
 
+    // Pre-compile WASM module once (shared by all workers)
+    this._wasmModule = null
+    this._precompileWasm()
+
     // Init UI modules (progress bar, percentage slider, random jump, auto-scan)
     this._initUIModules()
 
@@ -123,6 +127,27 @@ export default class extends Controller {
     // Expose console elements
     wl.consoleEl = this.hasConsoleTarget ? this.consoleTarget : null
     wl.consoleEmptyEl = this.hasConsoleEmptyTarget ? this.consoleEmptyTarget : null
+  }
+
+  _precompileWasm() {
+    try {
+      const tmp = new Worker(`js/worker.js${this.assetQuery}`)
+      tmp.postMessage({ type: "precompile" })
+      this._wasmModuleReady = new Promise((resolve) => {
+        tmp.onmessage = (e) => {
+          if (e.data?.type === "wasmModule") {
+            this._wasmModule = e.data.module
+            this.log('info', 'WASM pré-compilado (compartilhado entre workers)')
+          }
+          resolve()
+          try { tmp.terminate() } catch {}
+        }
+        tmp.onerror = () => { resolve(); try { tmp.terminate() } catch {} }
+        setTimeout(() => { resolve(); try { tmp.terminate() } catch {} }, 5000)
+      })
+    } catch (e) {
+      console.warn('[WASM] Pre-compile worker failed:', e)
+    }
   }
 
   async _initGPUManager() {
@@ -259,14 +284,14 @@ export default class extends Controller {
     const ramGB = navigator.deviceMemory || 8
     const MB_PER_WORKER = 8
     const usableRAM = ramGB * 1024 * 0.6
-    return Math.max(1, Math.floor(usableRAM / MB_PER_WORKER))
+    return Math.max(1, Math.min(Math.floor(usableRAM / MB_PER_WORKER), 64))
   }
 
   populateWorkerCounts() {
     if (!this.hasWorkerCountTarget) return
     const cores = navigator.hardwareConcurrency || 4
     const ramLimit = this._maxWorkersForRAM()
-    const max = Math.min(cores, ramLimit)
+    const max = Math.min(cores, ramLimit, 64)
     const preferred = Math.min(Math.floor(cores * 0.75), max)
     this.workerCountTarget.innerHTML = ""
     for (let n = 1; n <= max; n++) {
@@ -592,7 +617,8 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: searchMode,
         pipeB: 2048,
-        blockKeys: blockKeyCount.toString()
+        blockKeys: blockKeyCount.toString(),
+        wasmModule: this._wasmModule
       })
       if (idx === 0 || idx === this.workers.filter(w => w !== null).length - 1) {
         this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
@@ -613,7 +639,8 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: searchMode,
         pipeB: 2048,
-        blockKeys: String(count)
+        blockKeys: String(count),
+        wasmModule: this._wasmModule
       })
       this.nextKey += BigInt(count)
       return true
@@ -663,7 +690,8 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: window._wl?.searchMode || "random",
         pipeB: 2048,
-        blockKeys: blockKeyCount.toString()
+        blockKeys: blockKeyCount.toString(),
+        wasmModule: this._wasmModule
       })
     } else {
       const count = this.batchSize
@@ -679,7 +707,8 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: window._wl?.searchMode || "random",
         pipeB: 2048,
-        blockKeys: String(count)
+        blockKeys: String(count),
+        wasmModule: this._wasmModule
       })
       this.nextKey += BigInt(count)
     }
@@ -695,6 +724,14 @@ export default class extends Controller {
     switch (data.type) {
       case "idle":
         this.assignRange(worker)
+        break
+
+      case "ready":
+        if (!this._wasmReadyLogged) {
+          this._wasmReadyLogged = true
+          const wasmCount = this.workers.filter(w => w !== null).length
+          this.log("info", "WASM carregado em " + wasmCount + " workers")
+        }
         break
 
       case "found":

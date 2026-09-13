@@ -323,8 +323,9 @@ function Searcher(cfg){
   this.pipeB = B;
   this.adaptiveB = B;
   this.pipeRebuildThreshold = B * 0.2;
-  this.reportEvery = (cfg.batchSize || 5000) >>> 0;
+  this.reportEvery = Math.max((cfg.batchSize || 8192), 32768) >>> 0;
   this.since = 0;
+  self.postMessage({type:'ready', workerIndex: this.workerIndex, wasm: !!this.wasm});
 
   /* Sequential state */
   this.seqKey = this.minKey;
@@ -473,6 +474,15 @@ var _workerStopped = false;
 
 self.onmessage = function(e){
   var m = e.data;
+  if (m.type === 'precompile'){
+    try {
+      var mod = new WebAssembly.Module(wasmBytes(WASM_B64));
+      self.postMessage({type:'wasmModule', module: mod});
+    } catch(err) {
+      self.postMessage({type:'wasmModule', module: null});
+    }
+    return;
+  }
   if (m.type === 'stop'){
     _workerStopped = true;
     _sr = null;
