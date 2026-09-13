@@ -108,10 +108,10 @@ export default class extends Controller {
     const wl = window._wl
     if (!wl) return
 
-    wl.log = (msg) => this.log('info', msg)
-    wl.logOk = (msg) => this.log('success', msg)
-    wl.logErr = (msg) => this.log('error', msg)
-    wl.logWarn = (msg) => this.log('warn', msg)
+    wl._logFn = (msg) => this.log('info', msg)
+    wl._logOkFn = (msg) => this.log('success', msg)
+    wl._logErrFn = (msg) => this.log('error', msg)
+    wl._logWarnFn = (msg) => this.log('warn', msg)
 
     wl.stopAll = () => this.stop()
     wl.start = () => this.start()
@@ -639,8 +639,8 @@ export default class extends Controller {
         type: "start",
         targetHash160: this.targetHash160,
         targetAddress: this.targetAddress,
-        startKey: block.start.toString(16),
-        endKey: block.end.toString(16),
+        startKey: block.start.toString(16).padStart(64, "0"),
+        endKey: block.end.toString(16).padStart(64, "0"),
         batchSize: this.batchSize,
         workerIndex: idx,
         lanes: 4,
@@ -819,7 +819,11 @@ export default class extends Controller {
       window.WbloteryUI.setEngineState("found")
     }
     if (window.WbloteryUI?._showMatchOverlay) {
-      window.WbloteryUI._showMatchOverlay(keyHex, address, '')
+      const fullStart = window._wl?.rangeStart || 0n
+      const fullEnd = window._wl?.rangeEnd || 1n
+      const keyBigInt = BigInt('0x' + keyHex)
+      const pctFound = Number((keyBigInt - fullStart) * 10000n / (fullEnd - fullStart)) / 100
+      window.WbloteryUI._showMatchOverlay(keyHex, address, pctFound.toFixed(4) + '%')
     }
     if (window.WbloteryUI?._playMatchSound) {
       window.WbloteryUI._playMatchSound()
@@ -1141,6 +1145,10 @@ export default class extends Controller {
     const pctScaled = BigInt(Math.floor(pct * 1e8))
     const offset = fullRange * pctScaled / (100n * 100000000n)
     const newKey = fullStart + offset
+
+    if (this.blockTracker) {
+      try { this.blockTracker.save() } catch {}
+    }
 
     const windowEnd = newKey + BLOCK_SIZE * 500n
     const cappedEnd = windowEnd > fullEnd ? fullEnd : windowEnd
