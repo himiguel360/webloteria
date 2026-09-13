@@ -126,21 +126,26 @@ export default class extends Controller {
   }
 
   async _initGPUManager() {
-    if (!window.GPUManager) return
-    const saved = localStorage.getItem('webloteria.gpuBackend') || 'auto'
-    this.selectedGpuBackend = saved
-    const ok = await GPUManager.init(saved)
-    if (ok) {
-      const info = GPUManager.getInfo()
-      const label = GPUManager.getLabel()
-      const desc = GPUManager.getDesc()
-      this.setWasmStatus('ready', `${label}: ${desc}`)
-      window.gpuAvailable = !!navigator.gpu
-      if (window._wl) window._wl._gpuBackend = GPUManager.getBackend()
-      this.log('info', `GPU backend: ${label} (${desc})`)
-    } else {
+    try {
+      if (!window.GPUManager) return
+      const saved = localStorage.getItem('webloteria.gpuBackend') || 'auto'
+      this.selectedGpuBackend = saved
+      const ok = await GPUManager.init(saved)
+      if (ok) {
+        const info = GPUManager.getInfo()
+        const label = GPUManager.getLabel()
+        const desc = GPUManager.getDesc()
+        this.setWasmStatus('ready', `${label}: ${desc}`)
+        window.gpuAvailable = !!navigator.gpu
+        if (window._wl) window._wl._gpuBackend = GPUManager.getBackend()
+        this.log('info', `GPU backend: ${label} (${desc})`)
+      } else {
+        window.gpuAvailable = false
+        this.setWasmStatus('error', 'Nenhum backend disponível')
+      }
+    } catch(e) {
+      console.warn('[GPU] Init failed:', e)
       window.gpuAvailable = false
-      this.setWasmStatus('error', 'Nenhum backend disponível')
     }
   }
 
@@ -407,7 +412,7 @@ export default class extends Controller {
 
     // GPU boost always runs when available (any mode)
     this._gpuRetries = 0
-    this._tryStartWebGPU(targetHash160, this.startBigKey).catch(() => {})
+    try { this._tryStartWebGPU(targetHash160, this.startBigKey) } catch(e) { this.log("warn", "GPU init erro: " + e.message) }
     // CPU workers always run
     this.spawnWorkers(workerCount)
     this.startStatsTimer()
@@ -955,10 +960,10 @@ export default class extends Controller {
   /* ------------------------------------------------------------------ */
 
   _tryStartWebGPU(targetHash160, rangeStart) {
-    if (!this.running) return Promise.resolve()
-    if (this.smallRange) return Promise.resolve()
+    if (!this.running) return
+    if (this.smallRange) return
 
-    if (!navigator.gpu) return Promise.resolve()
+    if (!navigator.gpu) return
 
     const self = this
 
@@ -1030,7 +1035,7 @@ export default class extends Controller {
       }
     }
 
-    _startGPU()
+    try { _startGPU().catch(e => console.warn('[GPU] Async init error:', e)) } catch(e) { /* sync error already caught above */ }
   }
 
   async _createMultiGPUPipeline(gpuInfo, targetHash160, rangeStart, rangeEnd, gpuIndex) {
