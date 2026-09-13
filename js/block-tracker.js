@@ -11,6 +11,7 @@ function BlockTracker(puzzleId, rangeStart, rangeEnd) {
     this.completedRanges = [];
     this.nextClaim = rangeStart;
     this._load();
+    this.cleanup();
 }
 
 BlockTracker._key = function(id) { return 'blockProgress_' + id; };
@@ -172,6 +173,14 @@ BlockTracker.prototype.reset = function() {
     this.completedRanges = [];
     this.nextClaim = this.rangeStart;
     try { localStorage.removeItem(BlockTracker._key(this.puzzleId)); } catch (e) {}
+};
+
+BlockTracker.prototype.cleanup = function() {
+    var self = this;
+    this.completedRanges = this.completedRanges.filter(function(r) {
+        return r[1] >= self.rangeStart && r[0] <= self.rangeEnd;
+    });
+    this._merge();
 };
 
 BlockTracker.prototype.exportJSON = function() {

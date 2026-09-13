@@ -364,6 +364,7 @@ export default class extends Controller {
       window._wl.currentSel = this._currentPuzzleId
     }
 
+    // BlockTracker = janela de 500B a partir do startKey
     this.blockTracker = new window.BlockTracker(
       this._currentPuzzleId,
       this.startBigKey,
@@ -371,9 +372,11 @@ export default class extends Controller {
     )
     this.blockTracker.reset()
 
-    const btRangeEnd = this.startBigKey + BLOCK_SIZE * 500n
-    window._wl.rangeStart = this.startBigKey
-    window._wl.rangeEnd = btRangeEnd
+    // Bridge globals = range INTEIRO da carteira (para slider/random/pctToKey)
+    if (window._wl) {
+      window._wl.rangeStart = 0n
+      window._wl.rangeEnd = puzzleRangeEnd
+    }
 
     this.log("info", this.t("log.started", { key: keyHex }))
     this.log("info", this.t("log.target", { address: target }))
@@ -878,11 +881,15 @@ export default class extends Controller {
     }
 
     if (this.blockTracker) {
-      const pct = this.blockTracker.getPctDone()
+      const fullStart = window._wl?.rangeStart || 0n
+      const fullEnd = window._wl?.rangeEnd || 1n
+      const fullRange = fullEnd - fullStart
+      const posInFull = this.blockTracker.rangeStart - fullStart
+      const pct = fullRange > 0n ? Number(posInFull * 10000n / fullRange) / 100 : 0
       const pfEl = this.element.querySelector("#progress-fill")
-      if (pfEl) pfEl.style.width = pct + "%"
+      if (pfEl) pfEl.style.width = Math.min(pct, 100) + "%"
       const ppEl = this.element.querySelector("#progress-pct")
-      if (ppEl) ppEl.textContent = pct.toFixed(2) + "%"
+      if (ppEl) ppEl.textContent = Math.min(pct, 100).toFixed(4) + "%"
     }
 
     const nowSync = Date.now()
@@ -904,7 +911,10 @@ export default class extends Controller {
     this.stopBlockSaveTimer()
     this._blockSaveTimer = setInterval(() => {
       if (this.blockTracker && this.running) {
-        try { this.blockTracker.save() } catch {}
+        try {
+          this.blockTracker.cleanup()
+          this.blockTracker.save()
+        } catch {}
       }
     }, 30000)
   }
@@ -1123,23 +1133,26 @@ export default class extends Controller {
 
   _repositionSearch(pct) {
     if (!this.running) return
-    const bt = this.blockTracker
-    const rangeStart = bt ? bt.rangeStart : this.startBigKey
-    const rangeEnd = bt ? bt.rangeEnd : this.startBigKey + BLOCK_SIZE * 500n
-    const range = rangeEnd - rangeStart
+
+    const fullStart = window._wl?.rangeStart || 0n
+    const fullEnd = window._wl?.rangeEnd || (this.startBigKey + BLOCK_SIZE * 500n)
+    const fullRange = fullEnd - fullStart
+
     const pctScaled = BigInt(Math.floor(pct * 1e8))
-    const offset = range * pctScaled / (100n * 100000000n)
-    const newKey = rangeStart + offset
+    const offset = fullRange * pctScaled / (100n * 100000000n)
+    const newKey = fullStart + offset
+
+    const windowEnd = newKey + BLOCK_SIZE * 500n
+    const cappedEnd = windowEnd > fullEnd ? fullEnd : windowEnd
+    this.blockTracker = new window.BlockTracker(this._currentPuzzleId, newKey, cappedEnd)
+
     this.nextKey = newKey
-    if (bt) {
-      bt.trimFrom(newKey)
-    }
     this.teardownWorkers()
     if (this.hasCurrentKeyTarget) {
       this.currentKeyTarget.textContent = newKey.toString(16).padStart(64, "0")
     }
     const workerCount = this.selectedWorkerCount()
     this.spawnWorkers(workerCount)
-    this.log('info', 'Reposicionado para ' + pct.toFixed(4) + '% do intervalo')
+    this.log('info', 'Reposicionado para ' + pct.toFixed(4) + '% do range inteiro')
   }
 }
