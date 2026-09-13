@@ -1128,6 +1128,9 @@ export default class extends Controller {
       bt.trimFrom(newKey)
     }
     this.teardownWorkers()
+    if (this.hasCurrentKeyTarget) {
+      this.currentKeyTarget.textContent = newKey.toString(16).padStart(64, "0")
+    }
     const workerCount = this.selectedWorkerCount()
     this.spawnWorkers(workerCount)
     this.log('info', 'Reposicionado para ' + pct.toFixed(4) + '% do intervalo')
