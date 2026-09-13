@@ -34,7 +34,7 @@ const GPUManager = (() => {
       } catch (e) {}
 
       const device = await adapter.requestDevice();
-      device.lost.then(() => {});
+      try { device.destroy(); } catch(e) {}
 
       // Detect backend API (Vulkan, DX12, Metal)
       let api = 'unknown';

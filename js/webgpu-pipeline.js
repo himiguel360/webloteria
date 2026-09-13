@@ -105,14 +105,14 @@ const WebGPU_Turbo = (() => {
 
     const GPU_PROFILES = {
         'nvidia':   { workgroupSize: 64, batchSize: 64, maxWorkgroups: 65535 },
-        'amd':      { workgroupSize: 64, batchSize: 48, maxWorkgroups: 65535 },
-        'intel':    { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 },
-        'qualcomm': { workgroupSize: 64, batchSize: 24, maxWorkgroups: 65535 },
-        'arm':      { workgroupSize: 32, batchSize: 24, maxWorkgroups: 16384 },
-        'apple':    { workgroupSize: 32, batchSize: 32, maxWorkgroups: 65535 },
-        'powervr':  { workgroupSize: 32, batchSize: 16, maxWorkgroups: 8192 },
-        'broadcom': { workgroupSize: 16, batchSize: 16, maxWorkgroups: 4096 },
-        'default':  { workgroupSize: 32, batchSize: 24, maxWorkgroups: 16384 }
+        'amd':      { workgroupSize: 64, batchSize: 64, maxWorkgroups: 65535 },
+        'intel':    { workgroupSize: 32, batchSize: 64, maxWorkgroups: 65535 },
+        'qualcomm': { workgroupSize: 32, batchSize: 64, maxWorkgroups: 65535 },
+        'arm':      { workgroupSize: 32, batchSize: 64, maxWorkgroups: 16384 },
+        'apple':    { workgroupSize: 32, batchSize: 64, maxWorkgroups: 65535 },
+        'powervr':  { workgroupSize: 32, batchSize: 64, maxWorkgroups: 8192 },
+        'broadcom': { workgroupSize: 16, batchSize: 64, maxWorkgroups: 4096 },
+        'default':  { workgroupSize: 32, batchSize: 64, maxWorkgroups: 16384 }
     };
 
     function detectGPUVendor(info) {
@@ -191,7 +191,9 @@ const WebGPU_Turbo = (() => {
             if (!adapter) {
                 try {
                     adapter = await navigator.gpu.requestAdapter({ featureLevel: 'compatibility' });
-                } catch (e) {}
+            } catch (e) {
+                console.warn('[WebGPU] Final dispatch read failed:', e.message);
+            }
             }
             if (!adapter) return false;
 
@@ -358,7 +360,8 @@ const WebGPU_Turbo = (() => {
     function restoreCalibration() {
         try {
             const s = parseInt(localStorage.getItem(CALIBRATION_KEY));
-            if (s >= WORKGROUP_SIZE * BATCH_SIZE && s <= (1 << 26)) keysPerDispatch = s;
+            const maxAllowed = keysPerDispatch * 10;
+            if (s >= WORKGROUP_SIZE * BATCH_SIZE && s <= maxAllowed) keysPerDispatch = s;
         } catch (e) {}
     }
 
@@ -474,13 +477,13 @@ const WebGPU_Turbo = (() => {
             const totalKeys = await submitOne(currentKey, curBuf);
 
             if (totalKeys === 0) {
-                currentKey += keysCovered;
+                currentKey += BigInt(keysCovered);
                 continue;
             }
 
             dispatchCount++;
             totalChecked += BigInt(totalKeys);
-            currentKey += keysCovered;
+            currentKey += BigInt(totalKeys);
 
             // Read previous dispatch results while GPU works on current
             if (dispatchCount > 1) {

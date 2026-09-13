@@ -73,6 +73,7 @@ export default class extends Controller {
     this.locale = document.documentElement.lang || "pt"
     this.plural = this.pluralRules(this.locale)
     this.gpuSearchActive = false
+    this._gpuRetries = 0
     this.blockTracker = null
     this.workerBlocks = {}
     this.smallRange = false
@@ -249,12 +250,21 @@ export default class extends Controller {
   /* Worker count                                                         */
   /* ------------------------------------------------------------------ */
 
+  _maxWorkersForRAM() {
+    const ramGB = navigator.deviceMemory || 8
+    const MB_PER_WORKER = 8
+    const usableRAM = ramGB * 1024 * 0.6
+    return Math.max(1, Math.floor(usableRAM / MB_PER_WORKER))
+  }
+
   populateWorkerCounts() {
     if (!this.hasWorkerCountTarget) return
     const cores = navigator.hardwareConcurrency || 4
-    const preferred = Math.max(1, cores - 1)
+    const ramLimit = this._maxWorkersForRAM()
+    const max = Math.min(cores, ramLimit)
+    const preferred = Math.min(Math.floor(cores * 0.75), max)
     this.workerCountTarget.innerHTML = ""
-    for (let n = 1; n <= cores; n++) {
+    for (let n = 1; n <= max; n++) {
       const option = document.createElement("option")
       option.value = String(n)
       option.textContent = this.cores(n)
@@ -396,7 +406,8 @@ export default class extends Controller {
     }
 
     // GPU boost always runs when available (any mode)
-    this._tryStartWebGPU(targetHash160, this.startBigKey)
+    this._gpuRetries = 0
+    this._tryStartWebGPU(targetHash160, this.startBigKey).catch(() => {})
     // CPU workers always run
     this.spawnWorkers(workerCount)
     this.startStatsTimer()
@@ -944,16 +955,28 @@ export default class extends Controller {
   /* ------------------------------------------------------------------ */
 
   _tryStartWebGPU(targetHash160, rangeStart) {
-    if (!this.running) return
-    if (this.smallRange) return
+    if (!this.running) return Promise.resolve()
+    if (this.smallRange) return Promise.resolve()
 
-    if (!navigator.gpu) return
+    if (!navigator.gpu) return Promise.resolve()
 
     const self = this
 
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('GPU detection timeout')), ms))
+      ])
+    }
+
     async function _startGPU() {
-      // Detect all available GPUs
-      const allGPUs = await GPUManager.detectAllGPUs()
+      let allGPUs
+      try {
+        allGPUs = await withTimeout(GPUManager.detectAllGPUs(), 5000)
+      } catch (e) {
+        self.log("warn", "Deteccao GPU excedeu timeout. Usando fallback.")
+        allGPUs = []
+      }
 
       if (allGPUs.length === 0) {
         // Fallback: try single pipeline via WebGPU_Turbo
@@ -1058,6 +1081,11 @@ export default class extends Controller {
     }).catch(function (e) {
       self.gpuSearchActive = false
       self.log("warn", "GPU search erro: " + e.message)
+      if (self._gpuRetries >= 3) {
+        self.log("warn", "GPU desativada apos 3 falhas. Usando apenas CPU.")
+        return
+      }
+      self._gpuRetries++
       if (self.running && navigator.gpu) {
         setTimeout(function () {
           if (!self.running) return
