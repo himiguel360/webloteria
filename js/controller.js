@@ -545,7 +545,11 @@ export default class extends Controller {
     this.workers.push(worker)
 
     if (this.blockTracker) {
-      const block = this.blockTracker.claimBlock(BLOCK_SIZE)
+      let block = this.blockTracker.claimBlock(BLOCK_SIZE)
+      if (!block) {
+        this.blockTracker.reset()
+        block = this.blockTracker.claimBlock(BLOCK_SIZE)
+      }
       if (!block) return false
       this.workerBlocks[idx] = block
       const blockKeyCount = block.end - block.start + 1n
@@ -610,18 +614,12 @@ export default class extends Controller {
     if (!this.running) return
 
     if (this.blockTracker) {
-      const block = this.blockTracker.claimBlock(BLOCK_SIZE)
+      let block = this.blockTracker.claimBlock(BLOCK_SIZE)
       if (!block) {
-        worker.terminate()
-        const idx = this.workers.indexOf(worker)
-        if (idx !== -1) {
-          this.workers[idx] = null
-          delete this.workerBlocks[idx]
-        }
-        const active = this.workers.filter(w => w !== null)
-        if (active.length === 0) this.finishAllDone()
-        return
+        this.blockTracker.reset()
+        block = this.blockTracker.claimBlock(BLOCK_SIZE)
       }
+      if (!block) return
       const idx = this.workers.indexOf(worker)
       this.workerBlocks[idx] = block
       const blockKeyCount = block.end - block.start + 1n
