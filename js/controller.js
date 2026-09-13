@@ -96,10 +96,6 @@ export default class extends Controller {
     // Init GPU manager
     this._initGPUManager()
 
-    // Pre-compile WASM module once (shared by all workers)
-    this._wasmModule = null
-    this._precompileWasm()
-
     // Init UI modules (progress bar, percentage slider, random jump, auto-scan)
     this._initUIModules()
 
@@ -127,27 +123,6 @@ export default class extends Controller {
     // Expose console elements
     wl.consoleEl = this.hasConsoleTarget ? this.consoleTarget : null
     wl.consoleEmptyEl = this.hasConsoleEmptyTarget ? this.consoleEmptyTarget : null
-  }
-
-  _precompileWasm() {
-    try {
-      const tmp = new Worker(`js/worker.js${this.assetQuery}`)
-      tmp.postMessage({ type: "precompile" })
-      this._wasmModuleReady = new Promise((resolve) => {
-        tmp.onmessage = (e) => {
-          if (e.data?.type === "wasmModule") {
-            this._wasmModule = e.data.module
-            this.log('info', 'WASM pré-compilado (compartilhado entre workers)')
-          }
-          resolve()
-          try { tmp.terminate() } catch {}
-        }
-        tmp.onerror = () => { resolve(); try { tmp.terminate() } catch {} }
-        setTimeout(() => { resolve(); try { tmp.terminate() } catch {} }, 5000)
-      })
-    } catch (e) {
-      console.warn('[WASM] Pre-compile worker failed:', e)
-    }
   }
 
   async _initGPUManager() {
@@ -617,8 +592,7 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: searchMode,
         pipeB: 2048,
-        blockKeys: blockKeyCount.toString(),
-        wasmModule: this._wasmModule
+        blockKeys: blockKeyCount.toString()
       })
       if (idx === 0 || idx === this.workers.filter(w => w !== null).length - 1) {
         this.log("info", "Worker " + idx + ": bloco [" + block.start.toString(16) + ".." + block.end.toString(16) + "] (" + blockKeyCount.toLocaleString() + " chaves)")
@@ -639,8 +613,7 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: searchMode,
         pipeB: 2048,
-        blockKeys: String(count),
-        wasmModule: this._wasmModule
+        blockKeys: String(count)
       })
       this.nextKey += BigInt(count)
       return true
@@ -690,8 +663,7 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: window._wl?.searchMode || "random",
         pipeB: 2048,
-        blockKeys: blockKeyCount.toString(),
-        wasmModule: this._wasmModule
+        blockKeys: blockKeyCount.toString()
       })
     } else {
       const count = this.batchSize
@@ -707,8 +679,7 @@ export default class extends Controller {
         windowKeys: 262144,
         searchMode: window._wl?.searchMode || "random",
         pipeB: 2048,
-        blockKeys: String(count),
-        wasmModule: this._wasmModule
+        blockKeys: String(count)
       })
       this.nextKey += BigInt(count)
     }

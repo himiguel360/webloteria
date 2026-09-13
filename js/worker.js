@@ -474,15 +474,6 @@ var _workerStopped = false;
 
 self.onmessage = function(e){
   var m = e.data;
-  if (m.type === 'precompile'){
-    try {
-      var mod = new WebAssembly.Module(wasmBytes(WASM_B64));
-      self.postMessage({type:'wasmModule', module: mod});
-    } catch(err) {
-      self.postMessage({type:'wasmModule', module: null});
-    }
-    return;
-  }
   if (m.type === 'stop'){
     _workerStopped = true;
     _sr = null;
